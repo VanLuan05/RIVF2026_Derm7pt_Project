@@ -1,0 +1,9 @@
+# Bỏ qua thư mục dữ liệu để tránh phình to repo
+data/
+*.csv
+
+# Bỏ qua các file cache và môi trường ảo của Python
+__pycache__/
+*.pyc
+venv/
+.env
