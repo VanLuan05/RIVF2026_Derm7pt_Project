@@ -1,5 +1,5 @@
 # Bỏ qua thư mục dữ liệu để tránh phình to repo
-data/
+/data/
 *.csv
 
 # Bỏ qua các file cache và môi trường ảo của Python
