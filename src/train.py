@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from tqdm import tqdm
 
-# Cập nhật hàm loss, thêm tham số disease_weights và tăng alpha
-def compute_multitask_loss(disease_logits, disease_labels, concept_logits, concept_labels, disease_weights=None, alpha=2.0):
-    """
-    alpha đã được tăng lên 2.0 để AI phải chú ý học 7 Khái niệm lâm sàng nhiều hơn.
-    """
-    # 1. Loss cho chẩn đoán bệnh (Có dùng Class Weights)
+def compute_multitask_loss(disease_logits, disease_labels, concept_logits, concept_labels, disease_weights=None, concept_pos_weights=None, alpha=2.0):
+    # 1. Loss chẩn đoán bệnh (Cân bằng 5 lớp)
     if disease_weights is not None:
         criterion_disease = nn.CrossEntropyLoss(weight=disease_weights)
     else:
@@ -14,45 +12,29 @@ def compute_multitask_loss(disease_logits, disease_labels, concept_logits, conce
         
     loss_disease = criterion_disease(disease_logits, disease_labels)
     
-    # 2. Loss cho Khái niệm lâm sàng 
-    pos_weight = torch.tensor([5.0] * 7).to(concept_logits.device)
-    criterion_concept = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    # 2. Loss khái niệm (Ép học các triệu chứng bất thường - Abnormal=1)
+    if concept_pos_weights is not None:
+        criterion_concept = nn.BCEWithLogitsLoss(pos_weight=concept_pos_weights)
+    else:
+        criterion_concept = nn.BCEWithLogitsLoss()
+        
     loss_concept = criterion_concept(concept_logits, concept_labels)
     
     # 3. Tính tổng Loss
     total_loss = loss_disease + (alpha * loss_concept)
-    
     return total_loss, loss_disease, loss_concept
 
-#------------------------------------------------
-import torch.optim as optim
-from tqdm import tqdm
-import numpy as np 
-
-def train_model(model, train_loader, val_loader, num_epochs=20, learning_rate=5e-5): # Tăng epoch, giảm learning_rate
+def train_model(model, train_loader, val_loader, disease_weights=None, concept_pos_weights=None, num_epochs=20, learning_rate=5e-5):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Bắt đầu huấn luyện trên thiết bị: {device}")
     
     model.to(device)
     
-    # --- BẮT ĐẦU PHẦN TÍNH TRỌNG SỐ LỚP ---
-    print("Đang tính toán Class Weights để cân bằng dữ liệu...")
-    # Lấy toàn bộ nhãn bệnh trong tập train
-    all_labels = []
-    for batch in train_loader:
-        all_labels.extend(batch['label_disease'].numpy())
-        
-    class_counts = np.bincount(all_labels)
-    total_samples = len(all_labels)
-    num_classes = len(class_counts)
-    
-    # Công thức chuẩn: Trọng số = Tổng số mẫu / (Số lớp * Số mẫu của lớp đó)
-    class_weights = total_samples / (num_classes * class_counts)
-    
-    # Chuyển thành Tensor và đẩy lên GPU
-    disease_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
-    print("Hoàn tất tính trọng số!")
-    # --- KẾT THÚC PHẦN TÍNH TRỌNG SỐ ---
+    # Đẩy các ma trận trọng số lên GPU
+    if disease_weights is not None:
+        disease_weights = disease_weights.to(device)
+    if concept_pos_weights is not None:
+        concept_pos_weights = concept_pos_weights.to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     best_val_loss = float('inf')
@@ -71,9 +53,9 @@ def train_model(model, train_loader, val_loader, num_epochs=20, learning_rate=5e
             optimizer.zero_grad()
             disease_out, concept_out = model(clinic_img, derm_img, meta_features=None)
             
-            # Đưa disease_weights vào hàm loss
             loss, l_dis, l_con = compute_multitask_loss(
-                disease_out, disease_labels, concept_out, concept_labels, disease_weights=disease_weights
+                disease_out, disease_labels, concept_out, concept_labels, 
+                disease_weights=disease_weights, concept_pos_weights=concept_pos_weights
             )
             
             loss.backward()
@@ -85,7 +67,7 @@ def train_model(model, train_loader, val_loader, num_epochs=20, learning_rate=5e
             
         avg_train_loss = train_loss / len(train_loader)
         
-        # --- Phần Validation giữ nguyên như cũ, chỉ cập nhật hàm loss gọi disease_weights ---
+        # Chuyển sang chế độ Validation
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
@@ -96,9 +78,9 @@ def train_model(model, train_loader, val_loader, num_epochs=20, learning_rate=5e
                 concept_labels = batch['concept_labels'].to(device)
                 
                 disease_out, concept_out = model(clinic_img, derm_img, meta_features=None)
-                # Đưa disease_weights vào hàm loss
                 loss, _, _ = compute_multitask_loss(
-                    disease_out, disease_labels, concept_out, concept_labels, disease_weights=disease_weights
+                    disease_out, disease_labels, concept_out, concept_labels, 
+                    disease_weights=disease_weights, concept_pos_weights=concept_pos_weights
                 )
                 val_loss += loss.item()
                 
