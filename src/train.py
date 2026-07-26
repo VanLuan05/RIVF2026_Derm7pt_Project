@@ -12,7 +12,11 @@ def compute_multitask_loss(disease_logits, disease_labels, concept_logits, conce
         
     loss_disease = criterion_disease(disease_logits, disease_labels)
     
-    # 2. Loss khái niệm (Ép học các triệu chứng bất thường - Abnormal=1)
+    # KHI CHẠY BASELINE (B0, B1, B2): Nếu không có Concept đầu ra, chỉ trả về Loss Bệnh
+    if concept_logits is None:
+        return loss_disease, loss_disease, torch.tensor(0.0)
+    
+    # 2. Loss khái niệm (Dành cho Pure CBM và Hybrid CBM)
     if concept_pos_weights is not None:
         criterion_concept = nn.BCEWithLogitsLoss(pos_weight=concept_pos_weights)
     else:

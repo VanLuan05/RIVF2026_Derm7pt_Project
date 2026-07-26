@@ -45,8 +45,18 @@ def main():
     num_disease_classes = len(train_dataset.disease_to_idx)
     print(f"Số lượng lớp bệnh (Disease Classes): {num_disease_classes}")
     
-    # 4. Khởi tạo mô hình
-    model = MultimodalDermModel(num_classes=num_disease_classes, num_concepts=7, use_metadata=False)
+   # 4. Khởi tạo mô hình
+    print("\n" + "="*50)
+    print("🚀 ĐANG KHỞI TẠO MÔ HÌNH: BASELINE B0 (DERMOSCOPY-ONLY) 🚀")
+    print("="*50)
+    
+    model = MultimodalDermModel(
+        num_classes=num_disease_classes, 
+        num_concepts=7, 
+        modality='derm_only',      # Thiết lập 1: CHỈ dùng ảnh Dermoscopy
+        bottleneck_type='none',    # Thiết lập 2: KHÔNG dùng Concept Bottleneck
+        use_metadata=False
+    )
     
     # 5. Kích hoạt huấn luyện
     train_model(
@@ -54,7 +64,7 @@ def main():
         train_loader=train_loader, 
         val_loader=val_loader, 
         disease_weights=disease_weights, 
-        concept_pos_weights=concept_pos_weights,
+        concept_pos_weights=concept_pos_weights, #train.py sẽ tự bỏ qua biến này
         num_epochs=20, 
         learning_rate=5e-5
     )

@@ -25,7 +25,7 @@ def plot_confusion_matrix(y_true, y_pred, class_names, save_path="disease_confus
     plt.tight_layout()
     plt.savefig(save_path, dpi=300) 
     plt.close()
-    print(f"📸 Đã lưu biểu đồ Ma trận nhầm lẫn tại: {save_path}")
+    print(f"Đã lưu biểu đồ Ma trận nhầm lẫn tại: {save_path}")
 
 def plot_roc_curve(y_true, y_probs, concept_names, save_path="concept_roc_curve.png"):
     plt.figure(figsize=(10, 8))
