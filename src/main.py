@@ -54,7 +54,7 @@ def main():
         num_classes=num_disease_classes, 
         num_concepts=7, 
         modality='dual',     
-        bottleneck_type='none',  
+        bottleneck_type='pure',  
         use_metadata=False
     )
     
