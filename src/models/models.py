@@ -5,8 +5,12 @@ from torchvision import models
 class MultimodalDermModel(nn.Module):
     def __init__(self, num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=False):
         """
-        modality: 'clinic_only' (B1), 'derm_only' (B0), 'dual' (B2-B5)
-        bottleneck_type: 'none' (B0-B2), 'pure' (B4 - Pure CBM), 'hybrid' (B3, B5 - Hybrid CBM)
+        modality: 'clinic_only' (B1), 'derm_only' (B0), 'dual' (B2, B3, B4, B5)
+        bottleneck_type: 
+            - 'none' (B0, B1, B2)
+            - 'multitask' (B3 - Dual-image + concept multitask song song)
+            - 'pure' (B4 - Pure CBM)
+            - 'hybrid' (B5 - Hybrid CBM)
         """
         super(MultimodalDermModel, self).__init__()
         
@@ -33,12 +37,12 @@ class MultimodalDermModel(nn.Module):
             # self.meta_encoder = ... (Sẽ triển khai sau)
 
         # 3. KHỞI TẠO BỘ DỰ ĐOÁN KHÁI NIỆM (CHỈ CÓ Ở B3, B4, B5)
-        if self.bottleneck_type in ['pure', 'hybrid']:
+        if self.bottleneck_type in ['pure', 'hybrid', 'multitask']: # Đã thêm 'multitask'
             self.concept_classifier = nn.Linear(self.feature_dim, num_concepts)
 
-        # 4. KHỞI TẠO BỘ DỰ ĐOÁN BỆNH (GIẢI QUYẾT LỖI 5)
-        if self.bottleneck_type == 'none':
-            # B0, B1, B2: Dự đoán bệnh thẳng từ đặc trưng ảnh
+        # 4. KHỞI TẠO BỘ DỰ ĐOÁN BỆNH (GIẢI QUYẾT LỖI 5 VÀ TÁCH B3/B5)
+        if self.bottleneck_type in ['none', 'multitask']: 
+            # B0, B1, B2, B3: Dự đoán bệnh thẳng từ đặc trưng ảnh
             disease_in_features = self.feature_dim
             
         elif self.bottleneck_type == 'pure':
@@ -46,10 +50,10 @@ class MultimodalDermModel(nn.Module):
             disease_in_features = num_concepts
             
         elif self.bottleneck_type == 'hybrid':
-            # B3, B5 (Hybrid CBM): Nối đặc trưng ảnh và 7 xác suất khái niệm
+            # B5 (Hybrid CBM): Nối đặc trưng ảnh và 7 xác suất khái niệm
             disease_in_features = self.feature_dim + num_concepts
         else:
-            raise ValueError("bottleneck_type phải là 'none', 'pure', hoặc 'hybrid'")
+            raise ValueError("bottleneck_type phải là 'none', 'multitask', 'pure', hoặc 'hybrid'")
 
         # Phân loại bệnh (Classifier)
         self.disease_classifier = nn.Sequential(
@@ -86,6 +90,13 @@ class MultimodalDermModel(nn.Module):
             disease_logits = self.disease_classifier(combined_features)
             return disease_logits, None
             
+        elif self.bottleneck_type == 'multitask':
+            # Baseline B3 (Đa nhiệm song song)
+            # Hai nhánh hoạt động hoàn toàn độc lập từ cùng một gốc combined_features
+            concept_logits = self.concept_classifier(combined_features)
+            disease_logits = self.disease_classifier(combined_features) 
+            return disease_logits, concept_logits
+            
         elif self.bottleneck_type == 'pure':
             # Baseline B4 (Pure CBM)
             concept_logits = self.concept_classifier(combined_features)
@@ -94,7 +105,7 @@ class MultimodalDermModel(nn.Module):
             return disease_logits, concept_logits
             
         elif self.bottleneck_type == 'hybrid':
-            # Baseline B3, B5 (Hybrid CBM)
+            # Baseline B5 (Hybrid CBM)
             concept_logits = self.concept_classifier(combined_features)
             concept_probs = torch.sigmoid(concept_logits)
             hybrid_features = torch.cat((combined_features, concept_probs), dim=1) # Dùng cả hai

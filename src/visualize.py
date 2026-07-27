@@ -55,7 +55,7 @@ def main():
     base_dir = "data/"
     
     # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
-    model_name = "best_model_B2"
+    model_name = "best_model_B4"
     model_path = f"{model_name}.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
@@ -83,7 +83,7 @@ def main():
         num_classes=num_disease_classes, 
         num_concepts=7, 
         modality='dual',    # Thay đổi thành 'clinic_only' hoặc 'dual' nếu cần
-        bottleneck_type='pure',  # Thay đổi thành 'hybrid' hoặc 'pure' nếu cần
+        bottleneck_type='multitask',  # Thay đổi thành 'hybrid' hoặc 'pure' nếu cần
         use_metadata=False
     )
     
