@@ -7,6 +7,7 @@ import numpy as np
 
 from src.data.dataset import MultimodalDermDataset, test_transforms
 from src.models.models import MultimodalDermModel
+from src.config import Config
 
 def evaluate_model(model, test_loader, device, disease_names):
     print(f"Đang tiến hành đánh giá trên thiết bị: {device}...")
@@ -23,9 +24,10 @@ def evaluate_model(model, test_loader, device, disease_names):
             
             disease_labels = batch['label_disease'].cpu().numpy()
             concept_labels = batch['concept_labels'].cpu().numpy()
-            
+            # --- 1. LẤY METADATA TỪ BATCH ---
+            meta_features = batch['metadata'].to(device)
             # Mô hình trả về 2 output
-            disease_logits, concept_logits = model(clinic_img, derm_img, meta_features=None)
+            disease_logits, concept_logits = model(clinic_img, derm_img, meta_features=meta_features)
             
             # 1. Đánh giá Bệnh (Luôn luôn có)
             disease_probs = torch.softmax(disease_logits, dim=1)
@@ -72,37 +74,46 @@ def evaluate_model(model, test_loader, device, disease_names):
         print("\n[Mô hình Baseline này không dự đoán Khái niệm Lâm sàng]")
 
 def main():
-    base_dir = "data/"
-    model_path = "best_model_B3.pth"
+    # Lấy đường dẫn lưu trọng số chuẩn xác qua Config
+    model_name = "best_model_P2" 
+    model_path = Config.get_checkpoint_path(experiment_name=model_name)
         
-    VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
-    LABEL_MAPPING_JSON = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = os.path.join(base_dir, "raw/images/")
+    VAL_CSV = Config.VAL_CSV
+    LABEL_MAPPING_JSON = Config.LABEL_MAPPING
+    IMG_DIR = Config.IMG_DIR
     
     with open(LABEL_MAPPING_JSON, 'r') as f:
         disease_to_idx = json.load(f)
+        
     num_disease_classes = len(disease_to_idx)
     disease_names = [k for k, v in sorted(disease_to_idx.items(), key=lambda item: item[1])]
     
-    val_dataset = MultimodalDermDataset(csv_file=VAL_CSV, img_dir=IMG_DIR, label_mapping_path=LABEL_MAPPING_JSON, transform=test_transforms)
+    val_dataset = MultimodalDermDataset(
+        csv_file=VAL_CSV, 
+        img_dir=IMG_DIR, 
+        label_mapping_path=LABEL_MAPPING_JSON, 
+        transform=test_transforms
+    )
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     
-    # PHẢI ĐẶT THÔNG SỐ KHỚP VỚI LÚC TRAIN (ĐANG CHẠY B0)
+    # =========================================================================
+    # LƯU Ý QUAN TRỌNG: Cấu hình dưới đây dành cho Master Model P2
+    # =========================================================================
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
         modality='dual',
         bottleneck_type='multitask',
-        use_metadata=False
+        use_metadata=True
     )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
         print(f"Đã tải thành công trọng số từ: {model_path}")
         evaluate_model(model, val_loader, device, disease_names)
     else:
         print(f"Không tìm thấy file trọng số tại {model_path}. Vui lòng chờ huấn luyện xong!")
-
 if __name__ == "__main__":
     main()

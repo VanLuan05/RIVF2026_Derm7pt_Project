@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 
 from src.data.dataset import MultimodalDermDataset, test_transforms
 from src.models.models import MultimodalDermModel
+from src.config import Config
 
 def plot_confusion_matrix(y_true, y_pred, class_names, save_path="disease_confusion_matrix.png"):
     cm = confusion_matrix(y_true, y_pred, labels=range(len(class_names)))
@@ -52,15 +53,16 @@ def plot_roc_curve(y_true, y_probs, concept_names, save_path="concept_roc_curve.
     print(f"Đã lưu biểu đồ ROC Curve tại: {save_path}")
 
 def main():
-    base_dir = "data/"
-    
     # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
-    model_name = "best_model_B3"
-    model_path = f"{model_name}.pth"
+    model_name = "best_model_P2"
+    
+    # Tự động lấy đường dẫn lưu trọng số chuẩn xác qua Config
+    model_path = Config.get_checkpoint_path(experiment_name=model_name)
         
-    VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
-    LABEL_MAPPING_JSON = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = os.path.join(base_dir, "raw/images/")
+    # Gọi các đường dẫn dữ liệu từ Config
+    VAL_CSV = Config.VAL_CSV
+    LABEL_MAPPING_JSON = Config.LABEL_MAPPING
+    IMG_DIR = Config.IMG_DIR
     
     print("Đang đọc dữ liệu từ JSON...")
     with open(LABEL_MAPPING_JSON, 'r') as f:
@@ -77,14 +79,14 @@ def main():
     
     # =========================================================================
     # LƯU Ý QUAN TRỌNG: Hãy đảm bảo cấu hình dưới đây KHỚP với mô hình bạn đang chạy
-    # Hiện tại đang để cấu hình của Baseline B2 (Dual Modalities, Có Concept)
+    # Hiện tại đang để cấu hình của Master Model P2
     # =========================================================================
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='dual',    # Thay đổi thành 'clinic_only' hoặc 'dual' nếu cần
-        bottleneck_type='multitask',  # Thay đổi thành 'hybrid' hoặc 'pure' nếu cần
-        use_metadata=False
+        modality='dual',    
+        bottleneck_type='multitask', 
+        use_metadata=True
     )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,7 +95,7 @@ def main():
         model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
         print(f"Đã nạp trọng số từ: {model_path}")
     else:
-        print(f"Không tìm thấy {model_path}! Hãy chờ Colab huấn luyện xong.")
+        print(f"Không tìm thấy {model_path}! Hãy chờ Colab huấn luyện xong hoặc kiểm tra lại Config.")
         return
 
     model.to(device)
@@ -107,11 +109,14 @@ def main():
         for batch in val_loader:
             clinic_img = batch['clinic_img'].to(device)
             derm_img = batch['derm_img'].to(device)
+
+            # --- NÀY ĐỂ ĐỌC METADATA ---
+            meta_features = batch['metadata'].to(device)
             
             d_labels = batch['label_disease'].cpu().numpy()
             c_labels = batch['concept_labels'].cpu().numpy()
             
-            d_logits, c_logits = model(clinic_img, derm_img, meta_features=None)
+            d_logits, c_logits = model(clinic_img, derm_img, meta_features=meta_features)
             
             # Xử lý kết quả dự đoán Bệnh (Luôn có)
             d_probs = torch.softmax(d_logits, dim=1)
@@ -127,8 +132,11 @@ def main():
 
     print("\nBắt đầu vẽ biểu đồ...")
     
-    # 2. TRUYỀN TÊN ẢNH MỚI VÀO HÀM VẼ (Ví dụ: best_model_B0_confusion_matrix.png)
-    cm_save_path = f"{model_name}_confusion_matrix.png"
+    # Tạo thư mục outputs nếu chưa tồn tại
+    os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
+    
+    # 2. Điều hướng ảnh lưu thẳng vào thư mục outputs/
+    cm_save_path = os.path.join(Config.OUTPUT_DIR, f"{model_name}_confusion_matrix.png")
     plot_confusion_matrix(all_disease_labels, all_disease_preds, disease_names, save_path=cm_save_path)
     
     # 3. Chỉ vẽ ROC Curve nếu mô hình có dự đoán Concept
@@ -138,13 +146,12 @@ def main():
             'Regression Structures', 'Dots and Globules', 
             'Blue Whitish Veil', 'Vascular Structures'
         ]
-        roc_save_path = f"{model_name}_roc_curve.png"
+        roc_save_path = os.path.join(Config.OUTPUT_DIR, f"{model_name}_roc_curve.png")
         plot_roc_curve(all_concept_labels, all_concept_probs, concept_names, save_path=roc_save_path)
     else:
         print("Bỏ qua vẽ ROC Curve vì mô hình Baseline hiện tại không dự đoán Concept.")
         
-    print("\nHoàn tất! Hãy kiểm tra thư mục gốc dự án của bạn để lấy ảnh báo cáo.")
-
+    print(f"\nHoàn tất! Hãy kiểm tra thư mục '{Config.OUTPUT_DIR}' để lấy ảnh báo cáo.")
 if __name__ == "__main__":
     import matplotlib
     matplotlib.use('Agg')

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+from src.config import Config
 
 def compute_multitask_loss(disease_logits, disease_labels, concept_logits, concept_labels, disease_weights=None, concept_pos_weights=None, alpha=2.0):
     # 1. Loss chẩn đoán bệnh (Cân bằng 5 lớp)
@@ -103,5 +104,8 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
         
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), 'best_model.pth')
-            print(f"--> Đã lưu mô hình tốt nhất tại Epoch {epoch+1}")
+            
+            save_path = Config.get_checkpoint_path(experiment_name="best_model_P2")
+            
+            torch.save(model.state_dict(), save_path)
+            print(f"--> Đã lưu mô hình tốt nhất tại: {save_path}")
