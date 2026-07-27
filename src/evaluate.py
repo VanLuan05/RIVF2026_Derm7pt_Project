@@ -73,7 +73,7 @@ def evaluate_model(model, test_loader, device, disease_names):
 
 def main():
     base_dir = "data/"
-    model_path = "best_model_B4.pth"
+    model_path = "best_model_B3.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
     LABEL_MAPPING_JSON = os.path.join(base_dir, "processed/label_mapping.json")
@@ -87,12 +87,12 @@ def main():
     val_dataset = MultimodalDermDataset(csv_file=VAL_CSV, img_dir=IMG_DIR, label_mapping_path=LABEL_MAPPING_JSON, transform=test_transforms)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     
-    # [QUAN TRỌNG]: PHẢI ĐẶT THÔNG SỐ KHỚP VỚI LÚC TRAIN (ĐANG CHẠY B0)
+    # PHẢI ĐẶT THÔNG SỐ KHỚP VỚI LÚC TRAIN (ĐANG CHẠY B0)
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='dual',    # <-- Khớp với B2
-        bottleneck_type='multitask',  # <-- Khớp với B2
+        modality='dual',
+        bottleneck_type='multitask',
         use_metadata=False
     )
     

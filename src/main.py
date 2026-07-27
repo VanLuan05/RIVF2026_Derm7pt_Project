@@ -55,7 +55,7 @@ def main():
         num_concepts=7, 
         modality='dual',     
         bottleneck_type='multitask',  
-        use_metadata=False
+        use_metadata=True
     )
     
     # 5. Kích hoạt huấn luyện

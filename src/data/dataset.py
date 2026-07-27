@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from PIL import Image
 from torchvision import transforms
 
@@ -25,7 +25,7 @@ test_transforms = transforms.Compose([
 ])
 
 # ==========================================
-# 2. Hàm Dò Tìm Đường Dẫn Thông Minh (Chống lỗi Hoa/Thường)
+# 2. Hàm Dò Tìm Đường Dẫn Thông Minh
 # ==========================================
 def get_real_path(base_dir, relative_path):
     parts = str(relative_path).replace('\\', '/').split('/')
@@ -46,7 +46,7 @@ def get_real_path(base_dir, relative_path):
     return current_path
 
 # ==========================================
-# 3. Trái Tim Của Việc Nạp Dữ Liệu (Dataset Class)
+# 3. (Dataset Class)
 # ==========================================
 class MultimodalDermDataset(Dataset):
     def __init__(self, csv_file, img_dir, label_mapping_path, transform=None):
@@ -54,12 +54,16 @@ class MultimodalDermDataset(Dataset):
         self.img_dir = img_dir
         self.transform = transform
 
-        # ĐỌC MAPPING TỪ FILE JSON (Khắc phục Lỗi 1)
         if not os.path.exists(label_mapping_path):
-            raise FileNotFoundError(f"Không tìm thấy file Mapping tại: {label_mapping_path}. Hãy chạy prepare_data.py trước!")
+            raise FileNotFoundError(f"Không tìm thấy file Mapping tại: {label_mapping_path}")
             
         with open(label_mapping_path, 'r') as f:
             self.disease_to_idx = json.load(f)
+
+        #  GIẢI QUYẾT TỪ DỮ LIỆU: Lấy danh sách các giá trị Metadata duy nhất
+        self.sex_cats = self.data_frame['sex'].astype(str).unique().tolist()
+        self.loc_cats = self.data_frame['location'].astype(str).unique().tolist()
+        self.elev_cats = self.data_frame['elevation'].astype(str).unique().tolist()
 
     def __len__(self):
         return len(self.data_frame)
@@ -67,15 +71,13 @@ class MultimodalDermDataset(Dataset):
     def __getitem__(self, idx):
         row = self.data_frame.iloc[idx]
         
-        # SỬ DỤNG HÀM DÒ TÌM THÔNG MINH
         clinic_path = get_real_path(self.img_dir, row['clinic'])
         derm_path = get_real_path(self.img_dir, row['derm'])
 
-        # GỠ BỎ HOÀN TOÀN ÁO GIÁP ẢNH ĐEN. Nếu thiếu file, văng lỗi ngay để dọn dẹp Data.
         if clinic_path is None or not os.path.exists(clinic_path):
-            raise FileNotFoundError(f"Mất file Clinic thật sự tại dòng {idx}: {row['clinic']}")
+            raise FileNotFoundError(f"Mất file Clinic thật sự tại dòng {idx}")
         if derm_path is None or not os.path.exists(derm_path):
-            raise FileNotFoundError(f"Mất file Derm thật sự tại dòng {idx}: {row['derm']}")
+            raise FileNotFoundError(f"Mất file Derm thật sự tại dòng {idx}")
             
         clinic_img = Image.open(clinic_path).convert('RGB')
         derm_img = Image.open(derm_path).convert('RGB')
@@ -84,63 +86,59 @@ class MultimodalDermDataset(Dataset):
             clinic_img = self.transform(clinic_img)
             derm_img = self.transform(derm_img)
 
-        # LẤY NHÃN BỆNH CHUẨN (Đã chuyển về 5 Lớp ở prepare_data.py)
         target_disease = self.disease_to_idx[row['standard_diagnosis']]
         
-        # ĐỌC 7 KHÁI NIỆM ĐÃ ĐƯỢC MÃ HÓA (Abnormal = 1, Normal = 0) (Khắc phục Lỗi 3)
         concept_cols = [
             'pigment_network_encoded', 'streaks_encoded', 'pigmentation_encoded', 
             'regression_structures_encoded', 'dots_and_globules_encoded', 
             'blue_whitish_veil_encoded', 'vascular_structures_encoded'
         ]
-        
-        # Ép kiểu an toàn sang float
         concept_values = [float(row[col]) for col in concept_cols]
         concept_tensor = torch.tensor(concept_values, dtype=torch.float)
 
-        meta_features = {
-            'sex': str(row['sex']),
-            'location': str(row['location']),
-            'elevation': str(row['elevation'])
-        }
+        # =========================================================
+        # MÃ HÓA METADATA (ONE-HOT ENCODING)
+        # =========================================================
+        sex_vec = [1.0 if str(row['sex']) == c else 0.0 for c in self.sex_cats]
+        loc_vec = [1.0 if str(row['location']) == c else 0.0 for c in self.loc_cats]
+        elev_vec = [1.0 if str(row['elevation']) == c else 0.0 for c in self.elev_cats]
+        
+        # Nối tất cả thành 1 list
+        meta_features_list = sex_vec + loc_vec + elev_vec
+        
+        # Đệm thêm số 0 cho đủ kích thước 32 chiều (khớp với model)
+        if len(meta_features_list) < 32:
+            meta_features_list += [0.0] * (32 - len(meta_features_list))
+        else:
+            meta_features_list = meta_features_list[:32]
+            
+        meta_tensor = torch.tensor(meta_features_list, dtype=torch.float)
 
         sample = {
             'clinic_img': clinic_img,
             'derm_img': derm_img,
-            'metadata': meta_features,
+            'metadata': meta_tensor, # <--- Trả về Tensor 32 chiều, không trả String nữa
             'label_disease': torch.tensor(target_disease, dtype=torch.long),
             'concept_labels': concept_tensor
         }
 
         return sample
 
-# ==========================================
-# 4. Tiện Ích: Tính Toán Trọng Số Dựa Trên Phân Phố Thực Tế (Khắc phục Lỗi 8)
-# ==========================================
+# (Giữ nguyên hàm calculate_dataset_weights ở dưới cùng)
 def calculate_dataset_weights(csv_file, label_mapping_path):
-    """
-    Hàm này chỉ nên chạy trên tập TRAIN để tính toán ra:
-    1. disease_weights: Trọng số phạt cho 5 lớp bệnh (CrossEntropy)
-    2. concept_pos_weights: Trọng số phạt cho 7 khái niệm (BCEWithLogitsLoss)
-    Dựa trên đúng số lượng mẫu đếm được, tuyệt đối không đặt tay.
-    """
     df = pd.read_csv(csv_file)
     with open(label_mapping_path, 'r') as f:
         disease_to_idx = json.load(f)
         
     print("\nĐANG TÍNH TOÁN TRỌNG SỐ TỰ ĐỘNG THEO DỮ LIỆU THỰC...")
     
-    # --- 1. TÍNH TRỌNG SỐ BỆNH ---
-    # Đếm số lượng từng bệnh theo index
     disease_counts = df['standard_diagnosis'].map(disease_to_idx).value_counts().sort_index().values
     total_samples = len(df)
     num_classes = len(disease_counts)
     
-    # Công thức chuẩn: class_weight = total_samples / (num_classes * count)
     disease_weights = total_samples / (num_classes * disease_counts)
     print(f"Trọng số Bệnh (Disease Weights): {np.round(disease_weights, 4)}")
     
-    # --- 2. TÍNH TRỌNG SỐ KHÁI NIỆM (POS WEIGHTS) ---
     concept_cols = [
         'pigment_network_encoded', 'streaks_encoded', 'pigmentation_encoded', 
         'regression_structures_encoded', 'dots_and_globules_encoded', 
@@ -152,15 +150,12 @@ def calculate_dataset_weights(csv_file, label_mapping_path):
         positive_count = df[col].sum()
         negative_count = total_samples - positive_count
         
-        # Nếu mẫu quá hiếm (positive_count = 0) để tránh lỗi chia cho 0
         if positive_count == 0:
              pos_weight = 1.0
         else:
-             # Công thức chuẩn: pos_weight = negative_count / positive_count
              pos_weight = negative_count / positive_count
              
         concept_pos_weights.append(pos_weight)
         
     print(f"Trọng số Khái niệm (Concept Pos Weights): {np.round(concept_pos_weights, 4)}")
-    
     return torch.tensor(disease_weights, dtype=torch.float), torch.tensor(concept_pos_weights, dtype=torch.float)

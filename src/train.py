@@ -54,8 +54,13 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
             disease_labels = batch['label_disease'].to(device)
             concept_labels = batch['concept_labels'].to(device) 
             
+            # Đẩy Metadata lên GPU
+            meta_features = batch['metadata'].to(device)
+            
             optimizer.zero_grad()
-            disease_out, concept_out = model(clinic_img, derm_img, meta_features=None)
+            
+            # [SỬA LỖI]: Truyền meta_features vào Model lúc Train
+            disease_out, concept_out = model(clinic_img, derm_img, meta_features=meta_features)
             
             loss, l_dis, l_con = compute_multitask_loss(
                 disease_out, disease_labels, concept_out, concept_labels, 
@@ -81,7 +86,12 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
                 disease_labels = batch['label_disease'].to(device)
                 concept_labels = batch['concept_labels'].to(device)
                 
-                disease_out, concept_out = model(clinic_img, derm_img, meta_features=None)
+                # Đẩy Metadata lên GPU
+                meta_features = batch['metadata'].to(device)
+                
+                # [SỬA LỖI TRỌNG YẾU]: Bắt buộc phải truyền meta_features vào lúc Val
+                disease_out, concept_out = model(clinic_img, derm_img, meta_features=meta_features)
+                
                 loss, _, _ = compute_multitask_loss(
                     disease_out, disease_labels, concept_out, concept_labels, 
                     disease_weights=disease_weights, concept_pos_weights=concept_pos_weights

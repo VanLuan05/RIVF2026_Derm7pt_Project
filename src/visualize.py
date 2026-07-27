@@ -55,7 +55,7 @@ def main():
     base_dir = "data/"
     
     # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
-    model_name = "best_model_B4"
+    model_name = "best_model_B3"
     model_path = f"{model_name}.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
