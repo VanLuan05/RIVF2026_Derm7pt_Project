@@ -47,13 +47,13 @@ def main():
     
    # 4. Khởi tạo mô hình
     print("\n" + "="*50)
-    print("ĐANG KHỞI TẠO MÔ HÌNH: BASELINE B0 (DERMOSCOPY-ONLY) 🚀")
+    print("ĐANG KHỞI TẠO MÔ HÌNH BASELINE")
     print("="*50)
     
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='clinic_only',     
+        modality='dual',     
         bottleneck_type='none',  
         use_metadata=False
     )

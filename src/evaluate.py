@@ -73,7 +73,7 @@ def evaluate_model(model, test_loader, device, disease_names):
 
 def main():
     base_dir = "data/"
-    model_path = "best_model_B0.pth"
+    model_path = "best_model_B1.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
     LABEL_MAPPING_JSON = os.path.join(base_dir, "processed/label_mapping.json")
@@ -91,8 +91,8 @@ def main():
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='derm_only',    # <-- Khớp với B0
-        bottleneck_type='none',  # <-- Khớp với B0
+        modality='dual',    # <-- Khớp với B2
+        bottleneck_type='none',  # <-- Khớp với B2
         use_metadata=False
     )
     

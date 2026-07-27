@@ -55,7 +55,7 @@ def main():
     base_dir = "data/"
     
     # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
-    model_name = "best_model_B0"
+    model_name = "best_model_B1"
     model_path = f"{model_name}.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
@@ -77,12 +77,12 @@ def main():
     
     # =========================================================================
     # LƯU Ý QUAN TRỌNG: Hãy đảm bảo cấu hình dưới đây KHỚP với mô hình bạn đang chạy
-    # Hiện tại đang để cấu hình của Baseline B0 (Dermoscopy Only, Không Concept)
+    # Hiện tại đang để cấu hình của Baseline B1 (Clinical Only, Không Concept)
     # =========================================================================
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='derm_only',    # Thay đổi thành 'clinic_only' hoặc 'dual' nếu cần
+        modality='dual',    # Thay đổi thành 'clinic_only' hoặc 'dual' nếu cần
         bottleneck_type='none',  # Thay đổi thành 'hybrid' hoặc 'pure' nếu cần
         use_metadata=False
     )
