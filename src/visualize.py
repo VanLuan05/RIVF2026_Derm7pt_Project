@@ -14,14 +14,13 @@ def plot_confusion_matrix(y_true, y_pred, class_names, save_path="disease_confus
     cm = confusion_matrix(y_true, y_pred, labels=range(len(class_names)))
     plt.figure(figsize=(10, 8))
     
-    # Hiển thị TÊN BỆNH trực tiếp lên biểu đồ
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
                 xticklabels=class_names, yticklabels=class_names)
     
     plt.title('Confusion Matrix - Derm7pt (5 Classes)', fontsize=16, fontweight='bold', pad=20)
     plt.ylabel('True Label (Thực tế)', fontsize=12, fontweight='bold')
     plt.xlabel('Predicted Label (Dự đoán)', fontsize=12, fontweight='bold')
-    plt.xticks(rotation=45, ha='right') # Xoay nghiêng tên bệnh cho dễ đọc
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     plt.savefig(save_path, dpi=300) 
     plt.close()
@@ -44,7 +43,7 @@ def plot_roc_curve(y_true, y_probs, concept_names, save_path="concept_roc_curve.
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate (Tỷ lệ dương tính giả)', fontsize=12)
     plt.ylabel('True Positive Rate (Tỷ lệ dương tính thật)', fontsize=12)
-    plt.title('ROC Curve - Clinical Concepts (Abnormal Detection)', fontsize=16, fontweight='bold', pad=20)
+    plt.title('ROC Curve - Clinical Concepts', fontsize=16, fontweight='bold', pad=20)
     plt.legend(loc="lower right", fontsize=10)
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -54,7 +53,10 @@ def plot_roc_curve(y_true, y_probs, concept_names, save_path="concept_roc_curve.
 
 def main():
     base_dir = "data/"
-    model_path = "best_model.pth"
+    
+    # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
+    model_name = "best_model_B0"
+    model_path = f"{model_name}.pth"
         
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
     LABEL_MAPPING_JSON = os.path.join(base_dir, "processed/label_mapping.json")
@@ -73,14 +75,25 @@ def main():
     )
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     
-    model = MultimodalDermModel(num_classes=num_disease_classes, num_concepts=7, use_metadata=False)
+    # =========================================================================
+    # LƯU Ý QUAN TRỌNG: Hãy đảm bảo cấu hình dưới đây KHỚP với mô hình bạn đang chạy
+    # Hiện tại đang để cấu hình của Baseline B0 (Dermoscopy Only, Không Concept)
+    # =========================================================================
+    model = MultimodalDermModel(
+        num_classes=num_disease_classes, 
+        num_concepts=7, 
+        modality='derm_only',    # Thay đổi thành 'clinic_only' hoặc 'dual' nếu cần
+        bottleneck_type='none',  # Thay đổi thành 'hybrid' hoặc 'pure' nếu cần
+        use_metadata=False
+    )
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
         print(f"Đã nạp trọng số từ: {model_path}")
     else:
-        print(f"Không tìm thấy {model_path}!")
+        print(f"Không tìm thấy {model_path}! Hãy chờ Colab huấn luyện xong.")
         return
 
     model.to(device)
@@ -89,6 +102,7 @@ def main():
     all_disease_labels, all_disease_preds = [], []
     all_concept_labels, all_concept_probs = [], []
 
+    print("Đang phân tích các ca bệnh...")
     with torch.no_grad():
         for batch in val_loader:
             clinic_img = batch['clinic_img'].to(device)
@@ -99,26 +113,37 @@ def main():
             
             d_logits, c_logits = model(clinic_img, derm_img, meta_features=None)
             
+            # Xử lý kết quả dự đoán Bệnh (Luôn có)
             d_probs = torch.softmax(d_logits, dim=1)
             d_preds = torch.argmax(d_probs, dim=1).cpu().numpy()
             all_disease_labels.extend(d_labels)
             all_disease_preds.extend(d_preds)
             
-            c_probs = torch.sigmoid(c_logits).cpu().numpy()
-            all_concept_labels.extend(c_labels)
-            all_concept_probs.extend(c_probs)
+            # Xử lý kết quả dự đoán Concept (Chỉ làm khi có)
+            if c_logits is not None:
+                c_probs = torch.sigmoid(c_logits).cpu().numpy()
+                all_concept_labels.extend(c_labels)
+                all_concept_probs.extend(c_probs)
 
     print("\nBắt đầu vẽ biểu đồ...")
-    # Vẽ Confusion Matrix đẹp mắt với Tên Bệnh
-    plot_confusion_matrix(all_disease_labels, all_disease_preds, disease_names)
     
-    concept_names = [
-        'Pigment Network', 'Streaks', 'Pigmentation', 
-        'Regression Structures', 'Dots and Globules', 
-        'Blue Whitish Veil', 'Vascular Structures'
-    ]
-    plot_roc_curve(all_concept_labels, all_concept_probs, concept_names)
-    print("\nHoàn tất! Các biểu đồ đã được lưu trong thư mục hiện tại.")
+    # 2. TRUYỀN TÊN ẢNH MỚI VÀO HÀM VẼ (Ví dụ: best_model_B0_confusion_matrix.png)
+    cm_save_path = f"{model_name}_confusion_matrix.png"
+    plot_confusion_matrix(all_disease_labels, all_disease_preds, disease_names, save_path=cm_save_path)
+    
+    # 3. Chỉ vẽ ROC Curve nếu mô hình có dự đoán Concept
+    if len(all_concept_probs) > 0:
+        concept_names = [
+            'Pigment Network', 'Streaks', 'Pigmentation', 
+            'Regression Structures', 'Dots and Globules', 
+            'Blue Whitish Veil', 'Vascular Structures'
+        ]
+        roc_save_path = f"{model_name}_roc_curve.png"
+        plot_roc_curve(all_concept_labels, all_concept_probs, concept_names, save_path=roc_save_path)
+    else:
+        print("Bỏ qua vẽ ROC Curve vì mô hình Baseline hiện tại không dự đoán Concept.")
+        
+    print("\nHoàn tất! Hãy kiểm tra thư mục gốc dự án của bạn để lấy ảnh báo cáo.")
 
 if __name__ == "__main__":
     import matplotlib

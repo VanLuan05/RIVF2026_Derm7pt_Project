@@ -47,14 +47,14 @@ def main():
     
    # 4. Khởi tạo mô hình
     print("\n" + "="*50)
-    print("🚀 ĐANG KHỞI TẠO MÔ HÌNH: BASELINE B0 (DERMOSCOPY-ONLY) 🚀")
+    print("ĐANG KHỞI TẠO MÔ HÌNH: BASELINE B0 (DERMOSCOPY-ONLY) 🚀")
     print("="*50)
     
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='derm_only',      # Thiết lập 1: CHỈ dùng ảnh Dermoscopy
-        bottleneck_type='none',    # Thiết lập 2: KHÔNG dùng Concept Bottleneck
+        modality='clinic_only',     
+        bottleneck_type='none',  
         use_metadata=False
     )
     
