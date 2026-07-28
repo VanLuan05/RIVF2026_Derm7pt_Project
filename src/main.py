@@ -54,7 +54,7 @@ def main():
         num_classes=num_disease_classes, 
         num_concepts=7, 
         modality='dual',  # 'dual' cho cả clinic + derm, 'meta_only' chỉ metadata, 'derm_only' chỉ derm
-        bottleneck_type='hybrid',  
+        bottleneck_type='pure',  # 'pure' cho mô hình thuần, 'hybrid' cho mô hình can thiệp
         use_metadata=True
     )
     

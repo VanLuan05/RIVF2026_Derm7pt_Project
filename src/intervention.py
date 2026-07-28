@@ -12,7 +12,7 @@ from src.models.models import MultimodalDermModel
 def main():
     # CHÚ Ý: Phải chọn một mô hình cấu trúc Hybrid (Ví dụ bạn lấy Baseline B4 hoặc B5)
     # Giả sử bạn có file 'best_model_hybrid.pth' trong thư mục outputs
-    model_name = "best_model_hybrid" 
+    model_name = "best_model_pure" 
     model_path = Config.get_checkpoint_path(experiment_name=model_name)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -31,7 +31,7 @@ def main():
         num_classes=len(disease_to_idx), 
         num_concepts=7, 
         modality='dual',
-        bottleneck_type='hybrid', # <--- Bắt buộc phải là hybrid hoặc pure
+        bottleneck_type='pure', # <--- Bắt buộc phải là hybrid hoặc pure
         use_metadata=True
     )
     

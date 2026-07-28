@@ -105,7 +105,7 @@ class MultimodalDermModel(nn.Module):
         # Nếu mô hình chỉ dùng Metadata (Nhắm mắt đoán bệnh)
         if self.modality == 'meta_only':
             disease_logits = self.disease_classifier(combined_features)
-            return disease_logits, None # Không có hình ảnh nên không thể đoán Concept
+            return disease_logits, None 
 
         # Nếu mô hình có dùng hình ảnh
         if self.bottleneck_type == 'none':
@@ -120,27 +120,24 @@ class MultimodalDermModel(nn.Module):
         elif self.bottleneck_type == 'pure':
             concept_logits = self.concept_classifier(combined_features)
             concept_probs = torch.sigmoid(concept_logits)
-            disease_logits = self.disease_classifier(concept_probs)
-            return disease_logits, concept_logits
-
-        # --- BÁC SĨ CAN THIỆP ---
-        if intervention_probs is not None:
-            concept_probs = intervention_probs 
+            
+            # --- BÁC SĨ CAN THIỆP TẠI ĐÂY ---
+            if intervention_probs is not None:
+                concept_probs = intervention_probs 
                 
             disease_logits = self.disease_classifier(concept_probs)
             return disease_logits, concept_logits
-    
+            
         elif self.bottleneck_type == 'hybrid':
             concept_logits = self.concept_classifier(combined_features)
             concept_probs = torch.sigmoid(concept_logits)
-            hybrid_features = torch.cat((combined_features, concept_probs), dim=1)
-            disease_logits = self.disease_classifier(hybrid_features)
-            return disease_logits, concept_logits
-        
-        # --- BÁC SĨ CAN THIỆP ---
-        if intervention_probs is not None:
-            concept_probs = intervention_probs 
+            
+            # --- BÁC SĨ CAN THIỆP TẠI ĐÂY ---
+            if intervention_probs is not None:
+                concept_probs = intervention_probs 
                 
+            # Đã sửa lỗi shape: Nối đặc trưng đúng chuẩn 4135 chiều
             hybrid_features = torch.cat((combined_features, concept_probs), dim=1)
             disease_logits = self.disease_classifier(hybrid_features)
+            
             return disease_logits, concept_logits
