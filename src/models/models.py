@@ -70,7 +70,7 @@ class MultimodalDermModel(nn.Module):
             nn.Linear(512, num_classes)
         )
 
-    def forward(self, clinic_img, derm_img, meta_features=None):
+    def forward(self, clinic_img, derm_img, meta_features=None, intervention_probs=None):
         features = []
         
         # 1. Trích xuất đặc trưng ảnh (Nếu có)
@@ -122,10 +122,25 @@ class MultimodalDermModel(nn.Module):
             concept_probs = torch.sigmoid(concept_logits)
             disease_logits = self.disease_classifier(concept_probs)
             return disease_logits, concept_logits
-            
+
+        # --- BÁC SĨ CAN THIỆP ---
+        if intervention_probs is not None:
+            concept_probs = intervention_probs 
+                
+            disease_logits = self.disease_classifier(concept_probs)
+            return disease_logits, concept_logits
+    
         elif self.bottleneck_type == 'hybrid':
             concept_logits = self.concept_classifier(combined_features)
             concept_probs = torch.sigmoid(concept_logits)
+            hybrid_features = torch.cat((combined_features, concept_probs), dim=1)
+            disease_logits = self.disease_classifier(hybrid_features)
+            return disease_logits, concept_logits
+        
+        # --- BÁC SĨ CAN THIỆP ---
+        if intervention_probs is not None:
+            concept_probs = intervention_probs 
+                
             hybrid_features = torch.cat((combined_features, concept_probs), dim=1)
             disease_logits = self.disease_classifier(hybrid_features)
             return disease_logits, concept_logits
