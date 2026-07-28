@@ -54,7 +54,7 @@ def plot_roc_curve(y_true, y_probs, concept_names, save_path="concept_roc_curve.
 
 def main():
     # 1. TÁCH TÊN MÔ HÌNH ĐỂ LÀM TIỀN TỐ CHO TÊN ẢNH
-    model_name = "best_model_P2"
+    model_name = "baseline_meta_only"
     
     # Tự động lấy đường dẫn lưu trọng số chuẩn xác qua Config
     model_path = Config.get_checkpoint_path(experiment_name=model_name)
@@ -84,8 +84,8 @@ def main():
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='dual',    
-        bottleneck_type='multitask', 
+        modality='meta_only',    
+        bottleneck_type='none', 
         use_metadata=True
     )
     

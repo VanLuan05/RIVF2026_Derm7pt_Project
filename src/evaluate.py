@@ -75,7 +75,7 @@ def evaluate_model(model, test_loader, device, disease_names):
 
 def main():
     # Lấy đường dẫn lưu trọng số chuẩn xác qua Config
-    model_name = "best_model_P2" 
+    model_name = "baseline_meta_only" 
     model_path = Config.get_checkpoint_path(experiment_name=model_name)
         
     VAL_CSV = Config.VAL_CSV
@@ -102,8 +102,8 @@ def main():
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='dual',
-        bottleneck_type='multitask',
+        modality='meta_only',
+        bottleneck_type='none',
         use_metadata=True
     )
     

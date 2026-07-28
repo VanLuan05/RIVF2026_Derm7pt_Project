@@ -53,8 +53,8 @@ def main():
     model = MultimodalDermModel(
         num_classes=num_disease_classes, 
         num_concepts=7, 
-        modality='dual',     
-        bottleneck_type='multitask',  
+        modality='meta_only',     
+        bottleneck_type='none',  
         use_metadata=True
     )
     

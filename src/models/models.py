@@ -10,26 +10,33 @@ class MultimodalDermModel(nn.Module):
         self.bottleneck_type = bottleneck_type
         self.use_metadata = use_metadata
         
-        # 1. KHỞI TẠO BACKBONE
+        # 1. KHỞI TẠO BACKBONE XỬ LÝ ẢNH (Bỏ qua hoàn toàn nếu là meta_only)
         if self.modality in ['clinic_only', 'dual']:
-            resnet_clinic = models.resnet50(pretrained=True)
+            resnet_clinic = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
             self.clinic_backbone = nn.Sequential(*list(resnet_clinic.children())[:-1]) 
             
         if self.modality in ['derm_only', 'dual']:
-            resnet_derm = models.resnet50(pretrained=True)
+            resnet_derm = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
             self.derm_backbone = nn.Sequential(*list(resnet_derm.children())[:-1])
 
         # 2. TÍNH TOÁN KÍCH THƯỚC FEATURE
-        self.feature_dim = 2048 if self.modality in ['clinic_only', 'derm_only'] else 4096
+        if self.modality == 'dual':
+            self.feature_dim = 4096
+        elif self.modality in ['clinic_only', 'derm_only']:
+            self.feature_dim = 2048
+        elif self.modality == 'meta_only':
+            self.feature_dim = 0
+            self.use_metadata = True # Bắt buộc phải bật Metadata nếu không dùng ảnh
+        else:
+            raise ValueError("Modality không hợp lệ. Chọn: dual, clinic_only, derm_only, meta_only")
         
         # ========================================================
-        # [GIẢI QUYẾT TỪ MÔ HÌNH]: META-ENCODER ĐÃ KÍCH HOẠT
+        # KHỞI TẠO META-ENCODER XỬ LÝ NHÂN KHẨU HỌC
         # ========================================================
         if self.use_metadata:
             self.meta_dim = 32 
-            self.feature_dim += self.meta_dim # Nới rộng chiều kích thước để nhét thêm Meta
+            self.feature_dim += self.meta_dim 
             
-            # Khởi tạo Mạng Nơ-ron nhỏ để học từ Vector Metadata 32 chiều
             self.meta_encoder = nn.Sequential(
                 nn.Linear(32, 64),
                 nn.BatchNorm1d(64),
@@ -38,19 +45,22 @@ class MultimodalDermModel(nn.Module):
                 nn.Linear(64, self.meta_dim)
             )
 
-        # 3. KHỞI TẠO BỘ DỰ ĐOÁN KHÁI NIỆM 
-        if self.bottleneck_type in ['pure', 'hybrid', 'multitask']: 
+        # 3. KHỞI TẠO BỘ DỰ ĐOÁN KHÁI NIỆM (Bỏ qua nếu là meta_only)
+        if self.bottleneck_type in ['pure', 'hybrid', 'multitask'] and self.modality != 'meta_only': 
             self.concept_classifier = nn.Linear(self.feature_dim, num_concepts)
 
         # 4. KHỞI TẠO BỘ DỰ ĐOÁN BỆNH 
-        if self.bottleneck_type in ['none', 'multitask']: 
-            disease_in_features = self.feature_dim
-        elif self.bottleneck_type == 'pure':
-            disease_in_features = num_concepts
-        elif self.bottleneck_type == 'hybrid':
-            disease_in_features = self.feature_dim + num_concepts
+        if self.modality == 'meta_only':
+            disease_in_features = self.feature_dim # Kích thước chính là 32 chiều của MetaEncoder
         else:
-            raise ValueError("bottleneck_type không hợp lệ")
+            if self.bottleneck_type in ['none', 'multitask']: 
+                disease_in_features = self.feature_dim
+            elif self.bottleneck_type == 'pure':
+                disease_in_features = num_concepts
+            elif self.bottleneck_type == 'hybrid':
+                disease_in_features = self.feature_dim + num_concepts
+            else:
+                raise ValueError("Bottleneck_type không hợp lệ")
 
         self.disease_classifier = nn.Sequential(
             nn.Linear(disease_in_features, 512),
@@ -63,6 +73,7 @@ class MultimodalDermModel(nn.Module):
     def forward(self, clinic_img, derm_img, meta_features=None):
         features = []
         
+        # 1. Trích xuất đặc trưng ảnh (Nếu có)
         if self.modality in ['clinic_only', 'dual']:
             c_feat = self.clinic_backbone(clinic_img).view(clinic_img.size(0), -1)
             features.append(c_feat)
@@ -71,18 +82,32 @@ class MultimodalDermModel(nn.Module):
             d_feat = self.derm_backbone(derm_img).view(derm_img.size(0), -1)
             features.append(d_feat)
             
-        combined_features = torch.cat(features, dim=1)
+        if features:
+            combined_features = torch.cat(features, dim=1)
+        else:
+            combined_features = None # Xử lý riêng cho meta_only
 
-        # ========================================================
-        # KẾT HỢP DỮ LIỆU NHÂN KHẨU HỌC VÀO ĐẶC TRƯNG ẢNH
-        # ========================================================
+        # 2. Xử lý và Hợp nhất Metadata
         if self.use_metadata and meta_features is not None:
-            # Cho Metadata đi qua bộ mã hóa
             meta_out = self.meta_encoder(meta_features)
-            # Nối (Concatenate) thông tin y tế vào cạnh thông tin hình ảnh
-            combined_features = torch.cat((combined_features, meta_out), dim=1)
+            
+            if combined_features is not None:
+                # Nếu có ảnh thì nối thêm Metadata vào cạnh
+                combined_features = torch.cat((combined_features, meta_out), dim=1)
+            else:
+                # Nếu chạy meta_only thì chỉ dùng duy nhất Metadata
+                combined_features = meta_out
 
-        # 3. Phân luồng Cấu trúc 
+        if combined_features is None:
+             raise ValueError("Không có dữ liệu nào được trích xuất. Hãy kiểm tra lại đầu vào!")
+
+        # 3. Phân luồng Đầu ra
+        # Nếu mô hình chỉ dùng Metadata (Nhắm mắt đoán bệnh)
+        if self.modality == 'meta_only':
+            disease_logits = self.disease_classifier(combined_features)
+            return disease_logits, None # Không có hình ảnh nên không thể đoán Concept
+
+        # Nếu mô hình có dùng hình ảnh
         if self.bottleneck_type == 'none':
             disease_logits = self.disease_classifier(combined_features)
             return disease_logits, None

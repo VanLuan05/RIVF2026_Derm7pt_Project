@@ -60,7 +60,7 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
             
             optimizer.zero_grad()
             
-            # [SỬA LỖI]: Truyền meta_features vào Model lúc Train
+            # Truyền meta_features vào Model lúc Train
             disease_out, concept_out = model(clinic_img, derm_img, meta_features=meta_features)
             
             loss, l_dis, l_con = compute_multitask_loss(
@@ -105,7 +105,7 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             
-            save_path = Config.get_checkpoint_path(experiment_name="best_model_P2")
+            save_path = Config.get_checkpoint_path(experiment_name="baseline_meta_only")
             
             torch.save(model.state_dict(), save_path)
             print(f"--> Đã lưu mô hình tốt nhất tại: {save_path}")
