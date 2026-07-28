@@ -1,5 +1,5 @@
 import os
-from random import random
+from random import random as py_random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -57,7 +57,7 @@ def main():
         print("="*60)
         
         # 4. Khóa hạt giống (Set Seed) để đảm bảo tính tái lập (Reproducibility)
-        random.seed(current_seed)
+        py_random.seed(current_seed)
         np.random.seed(current_seed)
         torch.manual_seed(current_seed)
         if torch.cuda.is_available():
