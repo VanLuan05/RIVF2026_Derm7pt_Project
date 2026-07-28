@@ -29,7 +29,7 @@ def compute_multitask_loss(disease_logits, disease_labels, concept_logits, conce
     total_loss = loss_disease + (alpha * loss_concept)
     return total_loss, loss_disease, loss_concept
 
-def train_model(model, train_loader, val_loader, disease_weights=None, concept_pos_weights=None, num_epochs=20, learning_rate=5e-5):
+def train_model(model, train_loader, val_loader, disease_weights=None, concept_pos_weights=None, num_epochs=20, learning_rate=5e-5, experiment_name="best_model"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Bắt đầu huấn luyện trên thiết bị: {device}")
     
@@ -105,7 +105,7 @@ def train_model(model, train_loader, val_loader, disease_weights=None, concept_p
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             
-            save_path = Config.get_checkpoint_path(experiment_name="best_model_pure")
+            save_path = Config.get_checkpoint_path(experiment_name=experiment_name)
             
             torch.save(model.state_dict(), save_path)
             print(f"--> Đã lưu mô hình tốt nhất tại: {save_path}")

@@ -10,7 +10,7 @@ class Config:
     TRAIN_CSV = os.path.join(DATA_ROOT, "processed/train_split.csv")
     VAL_CSV = os.path.join(DATA_ROOT, "processed/val_split.csv")
     LABEL_MAPPING = os.path.join(DATA_ROOT, "processed/label_mapping.json")
-
+    TEST_CSV = os.path.join(DATA_ROOT, "processed/test_split.csv")
     # 2. Đường dẫn Đầu ra (Output/Checkpoints)
     OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
     
