@@ -11,7 +11,13 @@ from torchvision import transforms
 # 1. Các phép biến đổi ảnh (Transforms)
 # ==========================================
 train_transforms = transforms.Compose([
-    transforms.Resize((224, 224)),
+    # Phóng to ảnh lên 256x256 để viền đen bị đẩy ra rìa
+    transforms.Resize(256), 
+    
+    # Cắt lấy đúng khung 224x224 ở chính giữa (Loại bỏ viền)
+    transforms.CenterCrop(224), 
+    
+    # Các phép tăng cường dữ liệu (Data Augmentation) giữ nguyên
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
     transforms.ToTensor(),
@@ -19,7 +25,8 @@ train_transforms = transforms.Compose([
 ])
 
 test_transforms = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize(256),
+    transforms.CenterCrop(224), # Phải áp dụng cắt trung tâm cho cả lúc Đánh giá
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
