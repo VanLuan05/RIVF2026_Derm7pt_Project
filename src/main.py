@@ -1,5 +1,5 @@
 import os
-from random import random as py_random
+import random as py_random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
