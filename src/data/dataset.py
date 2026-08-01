@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import numpy as np
 import torch
+import joblib # Thêm thư viện để load mô hình
 from torch.utils.data import Dataset
 from PIL import Image
 from torchvision import transforms
@@ -11,13 +12,8 @@ from torchvision import transforms
 # 1. Các phép biến đổi ảnh (Transforms)
 # ==========================================
 train_transforms = transforms.Compose([
-    # Phóng to ảnh lên 256x256 để viền đen bị đẩy ra rìa
     transforms.Resize(256), 
-    
-    # Cắt lấy đúng khung 224x224 ở chính giữa (Loại bỏ viền)
     transforms.CenterCrop(224), 
-    
-    # Các phép tăng cường dữ liệu (Data Augmentation) giữ nguyên
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
     transforms.ToTensor(),
@@ -26,7 +22,7 @@ train_transforms = transforms.Compose([
 
 test_transforms = transforms.Compose([
     transforms.Resize(256),
-    transforms.CenterCrop(224), # Phải áp dụng cắt trung tâm cho cả lúc Đánh giá
+    transforms.CenterCrop(224), 
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -56,7 +52,7 @@ def get_real_path(base_dir, relative_path):
 # 3. (Dataset Class)
 # ==========================================
 class MultimodalDermDataset(Dataset):
-    def __init__(self, csv_file, img_dir, label_mapping_path, transform=None):
+    def __init__(self, csv_file, img_dir, label_mapping_path, meta_encoder_path="outputs/meta_encoder.joblib", transform=None):
         self.data_frame = pd.read_csv(csv_file)
         self.img_dir = img_dir
         self.transform = transform
@@ -67,10 +63,10 @@ class MultimodalDermDataset(Dataset):
         with open(label_mapping_path, 'r') as f:
             self.disease_to_idx = json.load(f)
 
-        #  GIẢI QUYẾT TỪ DỮ LIỆU: Lấy danh sách các giá trị Metadata duy nhất
-        self.sex_cats = self.data_frame['sex'].astype(str).unique().tolist()
-        self.loc_cats = self.data_frame['location'].astype(str).unique().tolist()
-        self.elev_cats = self.data_frame['elevation'].astype(str).unique().tolist()
+        # SỬA LỖI P0: Load chung một khuôn Metadata Encoder đã fit trên tập Train
+        if not os.path.exists(meta_encoder_path):
+            raise FileNotFoundError(f"Không tìm thấy Metadata Encoder tại: {meta_encoder_path}. Hãy chạy file prepare_data.py trước!")
+        self.meta_encoder = joblib.load(meta_encoder_path)
 
     def __len__(self):
         return len(self.data_frame)
@@ -104,34 +100,32 @@ class MultimodalDermDataset(Dataset):
         concept_tensor = torch.tensor(concept_values, dtype=torch.float)
 
         # =========================================================
-        # MÃ HÓA METADATA (ONE-HOT ENCODING)
+        # SỬA LỖI P0: MÃ HÓA METADATA ĐỒNG NHẤT (ONE-HOT ENCODING)
         # =========================================================
-        sex_vec = [1.0 if str(row['sex']) == c else 0.0 for c in self.sex_cats]
-        loc_vec = [1.0 if str(row['location']) == c else 0.0 for c in self.loc_cats]
-        elev_vec = [1.0 if str(row['elevation']) == c else 0.0 for c in self.elev_cats]
+        # 1. Lấy giá trị, nếu NaN thì thay bằng 'unknown'
+        sex = str(row['sex']) if pd.notna(row['sex']) else 'unknown'
+        loc = str(row['location']) if pd.notna(row['location']) else 'unknown'
+        elev = str(row['elevation']) if pd.notna(row['elevation']) else 'unknown'
         
-        # Nối tất cả thành 1 list
-        meta_features_list = sex_vec + loc_vec + elev_vec
+        # 2. Đưa qua encoder (yêu cầu mảng 2D)
+        meta_features_array = self.meta_encoder.transform([[sex, loc, elev]])
         
-        # Đệm thêm số 0 cho đủ kích thước 32 chiều (khớp với model)
-        if len(meta_features_list) < 32:
-            meta_features_list += [0.0] * (32 - len(meta_features_list))
-        else:
-            meta_features_list = meta_features_list[:32]
-            
-        meta_tensor = torch.tensor(meta_features_list, dtype=torch.float)
+        # 3. Chuyển numpy array (1, N) thành 1D tensor
+        meta_tensor = torch.tensor(meta_features_array[0], dtype=torch.float)
 
         sample = {
             'clinic_img': clinic_img,
             'derm_img': derm_img,
-            'metadata': meta_tensor, # <--- Trả về Tensor 32 chiều, không trả String nữa
+            'metadata': meta_tensor, # Kích thước hoàn toàn chuẩn xác theo Train set
             'label_disease': torch.tensor(target_disease, dtype=torch.long),
             'concept_labels': concept_tensor
         }
 
         return sample
 
-# (Giữ nguyên hàm calculate_dataset_weights ở dưới cùng)
+# ==========================================
+# 4. Tính toán trọng số lớp tự động
+# ==========================================
 def calculate_dataset_weights(csv_file, label_mapping_path):
     df = pd.read_csv(csv_file)
     with open(label_mapping_path, 'r') as f:

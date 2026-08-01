@@ -38,11 +38,11 @@ class MultimodalDermModel(nn.Module):
             self.feature_dim += self.meta_dim 
             
             self.meta_encoder = nn.Sequential(
-                nn.Linear(32, 64),
+                nn.Linear(14, 64),  # <--- SỬA LỖI P0: Nhận đúng 14 chiều từ OneHotEncoder
                 nn.BatchNorm1d(64),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(64, self.meta_dim)
+                nn.Linear(64, self.meta_dim) # Đầu ra nén thành 32 chiều để nối với ảnh
             )
 
         # 3. KHỞI TẠO BỘ DỰ ĐOÁN KHÁI NIỆM (Bỏ qua nếu là meta_only)
@@ -136,7 +136,7 @@ class MultimodalDermModel(nn.Module):
             if intervention_probs is not None:
                 concept_probs = intervention_probs 
                 
-            # Đã sửa lỗi shape: Nối đặc trưng đúng chuẩn 4135 chiều
+            # Nối đặc trưng đúng chuẩn
             hybrid_features = torch.cat((combined_features, concept_probs), dim=1)
             disease_logits = self.disease_classifier(hybrid_features)
             

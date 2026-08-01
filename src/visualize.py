@@ -92,7 +92,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
+        model.load_state_dict(torch.load(model_path, map_location=device))
         print(f"Đã nạp trọng số từ: {model_path}")
     else:
         print(f"Không tìm thấy {model_path}! Hãy chờ Colab huấn luyện xong hoặc kiểm tra lại Config.")

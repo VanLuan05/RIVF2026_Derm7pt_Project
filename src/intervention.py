@@ -36,7 +36,7 @@ def main():
     )
     
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
+        model.load_state_dict(torch.load(model_path, map_location=device))
         print(f"Đã nạp trọng số Hybrid từ: {model_path}")
     else:
         print(f"Không tìm thấy {model_path}! Bạn cần train một mô hình Hybrid trước.")

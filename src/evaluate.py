@@ -110,7 +110,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
+        model.load_state_dict(torch.load(model_path, map_location=device))
         print(f"Đã tải thành công trọng số từ: {model_path}")
         evaluate_model(model, val_loader, device, disease_names)
     else:

@@ -50,7 +50,7 @@ def main():
         bottleneck_type='multitask',
         use_metadata=True
     )
-    model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
 
