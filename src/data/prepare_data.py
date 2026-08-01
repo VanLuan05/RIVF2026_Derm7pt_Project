@@ -38,11 +38,27 @@ def encode_binary_abnormal_concept(concept_name, value):
 
 def main():
     print("Bắt đầu chuẩn hóa dữ liệu theo chuẩn Derm7pt...")
-    raw_csv_path = "data/raw/meta/meta.csv" 
-    output_dir = "data/processed/"
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs("outputs/", exist_ok=True)
     
+    # =================================================================
+    # CẬP NHẬT ĐƯỜNG DẪN: Tự động nhận diện Google Drive trên Colab
+    # =================================================================
+    colab_drive_path = "/content/drive/MyDrive/RIVF2026_Dataset/data/"
+    if os.path.exists(colab_drive_path):
+        print("Phát hiện môi trường Google Colab, đang trỏ tới Google Drive...")
+        base_dir = colab_drive_path
+    else:
+        print("Phát hiện môi trường máy tính cá nhân...")
+        base_dir = "data/"
+        
+    raw_csv_path = os.path.join(base_dir, "raw/meta/meta.csv")
+    output_dir = os.path.join(base_dir, "processed/")
+    
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs("outputs/", exist_ok=True) # Thư mục outputs nằm ở project root
+    
+    if not os.path.exists(raw_csv_path):
+        raise FileNotFoundError(f"Không tìm thấy file tại: {raw_csv_path}. Hãy kiểm tra lại Google Drive!")
+        
     df = pd.read_csv(raw_csv_path)
     
     # 1. Xử lý Lỗi 2: Áp dụng 5 nhóm bệnh
@@ -66,22 +82,18 @@ def main():
     print(f"Đã lưu từ điển nhãn: {disease_to_idx}")
 
     # 4. SỬA LỖI P0 (Mục 3): Patient-level Split (Chống rò rỉ dữ liệu)
-    # Đảm bảo ảnh của cùng 1 case_num không bị xé lẻ ra nhiều tập khác nhau
     df['case_num'] = df['case_num'].fillna('unknown_case')
     
-    # Tách Test (15%)
     gss_test = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=42)
     rest_idx, test_idx = next(gss_test.split(df, groups=df['case_num']))
     rest_df = df.iloc[rest_idx].copy()
     test_df = df.iloc[test_idx].copy()
     
-    # Từ 85% còn lại, tách Calibration (10% tổng = ~11.76% của rest)
     gss_calib = GroupShuffleSplit(n_splits=1, test_size=0.1176, random_state=42)
     train_val_idx, calib_idx = next(gss_calib.split(rest_df, groups=rest_df['case_num']))
     train_val_df = rest_df.iloc[train_val_idx].copy()
     calib_df = rest_df.iloc[calib_idx].copy()
     
-    # Từ 75% còn lại, tách Validation (15% tổng = 20% của train_val) -> Train sẽ còn 60%
     gss_val = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
     train_idx, val_idx = next(gss_val.split(train_val_df, groups=train_val_df['case_num']))
     train_df = train_val_df.iloc[train_idx].copy()
@@ -91,15 +103,12 @@ def main():
     print("Đang huấn luyện (Fit) Metadata Encoder duy nhất trên tập TRAIN...")
     meta_cols = ['sex', 'location', 'elevation']
     
-    # Điền giá trị thiếu (NaN)
     for d in [train_df, val_df, calib_df, test_df]:
         d[meta_cols] = d[meta_cols].fillna('unknown')
 
-    # Khởi tạo Encoder và CHỈ FIT TRÊN TRAIN
     encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
     encoder.fit(train_df[meta_cols])
     
-    # Lưu lại để tập Dataset.py load lên dùng
     encoder_path = "outputs/meta_encoder.joblib"
     joblib.dump(encoder, encoder_path)
     print(f"Đã lưu khuôn Metadata Encoder tại: {encoder_path}")
