@@ -1,4 +1,6 @@
 import os
+import warnings
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 import torch
 import numpy as np
 import random
