@@ -35,7 +35,7 @@ RIVF2026_Derm7pt_Project/
 │   └── gradcam_vis.py     # Trích xuất ảnh trực quan hóa Grad-CAM
 
 ** Hướng dẫn Chạy Thực nghiệm (Reproducibility Pipeline)
-# Lưu ý: Các tập lệnh cũ (như src.main, src.evaluate, src.visualize) đã được nâng cấp thành luồng tự động hóa. Vui lòng chạy các lệnh dưới đây theo đúng thứ tự để đảm bảo tính tái lập của hệ thống.
+-- Lưu ý: Các tập lệnh cũ (như src.main, src.evaluate, src.visualize) đã được nâng cấp thành luồng tự động hóa. Vui lòng chạy các lệnh dưới đây theo đúng thứ tự để đảm bảo tính tái lập của hệ thống.
 
 Bước 1: Tiền xử lý Dữ liệu & Mã hóa Metadata
 -- Quá trình này sẽ chia tập dữ liệu an toàn và đúc khuôn OneHotEncoder trên tập Train để tránh xô lệch nhãn.

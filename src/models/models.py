@@ -3,13 +3,14 @@ import torch.nn as nn
 from torchvision import models
 
 class MultimodalDermModel(nn.Module):
-    def __init__(self, num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=False):
+    def __init__(self, num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=False, meta_input_dim=14):
         super(MultimodalDermModel, self).__init__()
         
         self.modality = modality
         self.bottleneck_type = bottleneck_type
         self.use_metadata = use_metadata
-        
+        self.meta_input_dim = meta_input_dim
+
         # 1. KHỞI TẠO BACKBONE XỬ LÝ ẢNH (Bỏ qua hoàn toàn nếu là meta_only)
         if self.modality in ['clinic_only', 'dual']:
             resnet_clinic = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
@@ -38,7 +39,7 @@ class MultimodalDermModel(nn.Module):
             self.feature_dim += self.meta_dim 
             
             self.meta_encoder = nn.Sequential(
-                nn.Linear(14, 64),  # <--- SỬA LỖI P0: Nhận đúng 14 chiều từ OneHotEncoder
+                nn.Linear(meta_input_dim, 64),  # <--- SỬA LỖI P0: Nhận đúng 14 chiều từ OneHotEncoder
                 nn.BatchNorm1d(64),
                 nn.ReLU(),
                 nn.Dropout(0.2),

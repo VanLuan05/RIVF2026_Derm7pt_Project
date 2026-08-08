@@ -24,7 +24,7 @@ def main():
         
     model = MultimodalDermModel(
         num_classes=len(disease_to_idx), num_concepts=7, 
-        modality='dual', bottleneck_type='pure', use_metadata=True
+        modality='dual', bottleneck_type='pure', use_metadata=True, meta_input_dim=14
     )
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)

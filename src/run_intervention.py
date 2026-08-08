@@ -60,10 +60,10 @@ def main():
     test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     
-    # Chỉ test trên B5 (Pure CBM) và P2 (Multitask)
+    # Chỉ test can thiệp trên kiến trúc có Nút thắt khái niệm (Bottleneck)
     experiments = [
-        {"name": "B5_Dual_PureCBM", "modality": "dual", "bottleneck": "pure", "meta": True},
-        {"name": "Master_P2",       "modality": "dual", "bottleneck": "multitask", "meta": True}
+        {"name": "B6_PureCBM",       "modality": "dual", "bottleneck": "pure",   "meta": True},
+        {"name": "Proposed_Hybrid",  "modality": "dual", "bottleneck": "hybrid", "meta": True}
     ]
     seeds = [42, 100, 2026]
     results = []
