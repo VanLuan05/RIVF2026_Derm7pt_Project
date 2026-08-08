@@ -1,11 +1,9 @@
 import os
 import json
 import torch
-import warnings
-warnings.filterwarnings("ignore", message="X does not have valid feature names")
-
 import numpy as np
 import pandas as pd
+import joblib
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 from src.data.dataset import MultimodalDermDataset, test_transforms
@@ -24,10 +22,10 @@ def evaluate_intervention(model, data_loader, device):
             meta_features = batch['metadata'].to(device)
             labels = batch['label_disease'].numpy()
             
-            # Nhãn Concept "vàng" (Ground truth) được coi như Bác sĩ đã khám chuẩn xác 100%
+            # Nhãn Concept "vàng" (Ground truth) được coi như Bác sĩ khám chuẩn 100%
             doctor_concepts = batch['concept_labels'].to(device) 
             
-            # KỊCH BẢN 1: AI tự chẩn đoán toàn bộ (Không có Bác sĩ)
+            # KỊCH BẢN 1: AI tự chẩn đoán toàn bộ
             logits_ai, _ = model(clinic_img, derm_img, meta_features=meta_features)
             p_ai = torch.argmax(torch.softmax(logits_ai, dim=1), dim=1).cpu().numpy()
             
@@ -51,16 +49,25 @@ def main():
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    base_dir = "data/"
+    # 1. Tự động nhận diện đường dẫn dữ liệu (Colab Drive hoặc Local)
+    base_dir = "/content/drive/MyDrive/RIVF2026_Dataset/data/" if os.path.exists("/content/drive/MyDrive/RIVF2026_Dataset/data/") else "data/"
     TEST_CSV = os.path.join(base_dir, "processed/test_split.csv")
     LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
     IMG_DIR = os.path.join(base_dir, "raw/images/")
     OUTPUT_DIR = "outputs/"
     
     test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    workers = 2 if "content" in base_dir else 0
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=workers)
     
-    # Chỉ test can thiệp trên kiến trúc có Nút thắt khái niệm (Bottleneck)
+    # 2. Đọc số chiều Metadata tự động
+    try:
+        encoder = joblib.load(os.path.join(OUTPUT_DIR, "meta_encoder.joblib"))
+        dynamic_meta_dim = len(encoder.get_feature_names_out())
+    except:
+        dynamic_meta_dim = 14
+    
+    # 3. Chỉ test trên B6_PureCBM và Proposed_Hybrid (Khắc phục lỗi P0)
     experiments = [
         {"name": "B6_PureCBM",       "modality": "dual", "bottleneck": "pure",   "meta": True},
         {"name": "Proposed_Hybrid",  "modality": "dual", "bottleneck": "hybrid", "meta": True}
@@ -77,21 +84,22 @@ def main():
         for seed in seeds:
             model_path = os.path.join(OUTPUT_DIR, f"{exp_name}_seed_{seed}.pth")
             if not os.path.exists(model_path):
+                print(f"  -> Không tìm thấy file {model_path}")
                 continue
                 
             model = MultimodalDermModel(
                 num_classes=5, num_concepts=7, 
-                modality=exp["modality"], bottleneck_type=exp["bottleneck"], use_metadata=exp["meta"]
+                modality=exp["modality"], bottleneck_type=exp["bottleneck"], 
+                use_metadata=exp["meta"], meta_input_dim=dynamic_meta_dim # Đã bổ sung
             ).to(device)
             
-            # Load với strict=True để đảm bảo an toàn tuyệt đối
             model.load_state_dict(torch.load(model_path, map_location=device))
             
             f1_ai, f1_doc = evaluate_intervention(model, test_loader, device)
             f1_ai_list.append(f1_ai)
             f1_doc_list.append(f1_doc)
             
-            print(f"  -> Seed {seed} | F1 AI Tự đoán: {f1_ai:.4f} => Có Bác sĩ: {f1_doc:.4f} (+{f1_doc - f1_ai:.4f})")
+            print(f"  -> Seed {seed} | F1 AI Tự đoán: {f1_ai:.4f} => Có Bác sĩ: {f1_doc:.4f} ({(f1_doc - f1_ai):+.4f})")
             
         if f1_ai_list:
             results.append({
