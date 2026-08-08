@@ -1,6 +1,8 @@
 import os
 import json
 import torch
+import warnings
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
@@ -14,7 +16,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1. Tải mô hình Pure (Để lấy dự đoán Concept của AI)
-    model_name = "best_model_pure"
+    model_name = "B5_Dual_PureCBM_seed_42"
     model_path = Config.get_checkpoint_path(experiment_name=model_name)
     
     with open(Config.LABEL_MAPPING, 'r') as f:
