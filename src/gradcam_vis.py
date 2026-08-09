@@ -2,6 +2,7 @@ import os
 import json
 import warnings
 import torch
+import joblib
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
@@ -66,12 +67,16 @@ def main():
     test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
     
-    # 2. Khởi tạo mô hình Master_P2
-    print("Đang nạp mô hình Master_P2...")
-    model = MultimodalDermModel(num_classes=5, num_concepts=7, modality='dual', bottleneck_type='multitask', use_metadata=True).to(device)
+   # 2. Khởi tạo mô hình Proposed_Hybrid
+    print("Đang nạp mô hình Proposed_Hybrid...")
+    try:
+        encoder = joblib.load(os.path.join(OUTPUT_DIR, "meta_encoder.joblib"))
+        dynamic_meta_dim = len(encoder.get_feature_names_out())
+    except:
+        dynamic_meta_dim = 14
+    model = MultimodalDermModel(num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=True, meta_input_dim=dynamic_meta_dim).to(device)
     
-    # Đảm bảo bạn đang trỏ đúng tên file model trên máy (ví dụ seed 42)
-    model_path = "outputs/Master_P2_seed_42.pth" 
+    model_path = "outputs/Proposed_Hybrid_seed_42.pth"
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     

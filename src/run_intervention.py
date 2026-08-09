@@ -1,6 +1,8 @@
 import os
 import json
 import torch
+import warnings
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 import numpy as np
 import pandas as pd
 import joblib
