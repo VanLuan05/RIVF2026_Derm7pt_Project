@@ -25,7 +25,9 @@ def evaluate_intervention(model, data_loader, device):
             labels = batch['label_disease'].numpy()
             
             # Nhãn Concept "vàng" (Ground truth) được coi như Bác sĩ khám chuẩn 100%
-            doctor_concepts = batch['concept_labels'].to(device) 
+            # ÁP DỤNG LABEL SMOOTHING: Thay nhãn cứng (1/0) bằng nhãn mềm (0.95/0.05) để chống sốc phân phối
+            doctor_concepts_hard = batch['concept_labels'].to(device).float()
+            doctor_concepts = torch.where(doctor_concepts_hard == 1.0, torch.tensor(0.95).to(device), torch.tensor(0.05).to(device))
             
             # KỊCH BẢN 1: AI tự chẩn đoán toàn bộ
             logits_ai, _ = model(clinic_img, derm_img, meta_features=meta_features)
