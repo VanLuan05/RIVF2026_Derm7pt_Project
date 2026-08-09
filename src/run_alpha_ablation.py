@@ -109,7 +109,7 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=workers)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=workers)
     
-    alphas = [0.25, 0.5, 1.0, 2.0]
+    alphas = [1.5, 2.0, 3.0, 4.0]
     results = []
     
     print("="*60)
