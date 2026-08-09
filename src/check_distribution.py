@@ -1,16 +1,16 @@
-import os
 import pandas as pd
 
-def check_distribution(csv_path, split_name):
-    if not os.path.exists(csv_path):
-        return
-    df = pd.read_csv(csv_path)
-    dist = df['diagnosis'].value_counts(normalize=True) * 100
-    print(f"\nPhân bố lớp tập {split_name} (Tổng: {len(df)} mẫu):")
-    print(dist.round(2).astype(str) + "%")
+def print_dist(csv_path, name):
+    try:
+        df = pd.read_csv(csv_path)
+        counts = df['diagnosis'].value_counts()
+        total = len(df)
+        print(f"\n--- Phân bố tập {name} (Tổng: {total} ca) ---")
+        for cls, count in counts.items():
+            print(f"{cls}: {count} ({count/total*100:.1f}%)")
+    except Exception as e:
+        print(f"Không tìm thấy {csv_path}")
 
-if __name__ == "__main__":
-    base_dir = "data/processed/"
-    check_distribution(os.path.join(base_dir, "train_split.csv"), "TRAIN")
-    check_distribution(os.path.join(base_dir, "val_split.csv"), "VALIDATION")
-    check_distribution(os.path.join(base_dir, "test_split.csv"), "TEST")
+print_dist("data/processed/train_split.csv", "TRAIN")
+print_dist("data/processed/val_split.csv", "VALIDATION")
+print_dist("data/processed/test_split.csv", "TEST")
