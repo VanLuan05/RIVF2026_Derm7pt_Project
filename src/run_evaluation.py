@@ -1,8 +1,6 @@
 import os
 import json
 import torch
-import warnings
-warnings.filterwarnings("ignore", message="X does not have valid feature names")
 import numpy as np
 import pandas as pd
 import joblib
@@ -134,8 +132,9 @@ def main():
         print(f"\nĐang đánh giá mô hình: {exp_name}")
         
         metrics_dict = {"acc": [], "b_acc": [], "f1": [], "precision": [], "recall": [], "auroc": [], "spec": []}
-        best_seed_cm = None 
-        best_seed_f1 = -1
+        
+        # KHẮC PHỤC LỖI P1: Tạo ma trận rỗng để cộng dồn 3 seeds, loại bỏ bias
+        total_aggregated_cm = np.zeros((5, 5))
         
         for seed in seeds:
             model_path = os.path.join(OUTPUT_DIR, f"{exp_name}_seed_{seed}.pth")
@@ -160,15 +159,12 @@ def main():
             metrics_dict["auroc"].append(res["auroc"])
             metrics_dict["spec"].append(res["macro_spec"])
             
-            # Lưu lại CM của seed tốt nhất để vẽ biểu đồ
-            if res["f1"] > best_seed_f1:
-                best_seed_f1 = res["f1"]
-                best_seed_cm = res["cm"]
+            # Cộng dồn ma trận của seed hiện tại vào tổng
+            total_aggregated_cm += res["cm"]
             
             print(f"  -> Seed {seed} | F1: {res['f1']:.4f} | AUROC: {res['auroc']:.4f} | Prec: {res['precision']:.4f} | Rec: {res['recall']:.4f}")
             
         if metrics_dict["acc"]:
-            # Lưu tóm tắt Macro vào list
             results_macro.append({
                 "Model": exp_name,
                 "Accuracy": f"{np.mean(metrics_dict['acc']):.4f} ± {np.std(metrics_dict['acc']):.4f}",
@@ -179,20 +175,27 @@ def main():
                 "One-vs-Rest AUROC": f"{np.mean(metrics_dict['auroc']):.4f} ± {np.std(metrics_dict['auroc']):.4f}"
             })
             
-            # Lưu ảnh Normalized Confusion Matrix cho mô hình
-            if best_seed_cm is not None:
-                cm_path = os.path.join(OUTPUT_DIR, f"{exp_name}_best_normalized_cm.png")
-                plot_normalized_confusion_matrix(best_seed_cm, disease_names, cm_path, f"Normalized CM - {exp_name}")
+            # Vẽ 1 bức ảnh CM duy nhất từ ma trận đã cộng gộp 3 seeds
+            cm_path = os.path.join(OUTPUT_DIR, f"{exp_name}_aggregated_normalized_cm.png")
+            plot_normalized_confusion_matrix(total_aggregated_cm, disease_names, cm_path, f"Aggregated Normalized CM - {exp_name}")
 
     # Xuất báo cáo tổng hợp
     df_results = pd.DataFrame(results_macro)
     csv_out_path = os.path.join(OUTPUT_DIR, "final_advanced_results_summary.csv")
     df_results.to_csv(csv_out_path, index=False)
     
+    # KHẮC PHỤC LỖI THIẾU KẾT QUẢ TRÊN GITHUB: Tạo file Markdown
+    os.makedirs("results", exist_ok=True)
+    md_out_path = "results/final_results.md"
+    with open(md_out_path, "w", encoding="utf-8") as f:
+        f.write("### Bảng Tổng hợp Kết quả Thực nghiệm (Mean ± SD trên 3 Seeds)\n\n")
+        f.write(df_results.to_markdown(index=False))
+    
     print("\n" + "="*60)
     print(f"ĐÃ HOÀN TẤT ĐÁNH GIÁ NÂNG CAO!")
     print(f"Bảng kết quả tổng hợp: {csv_out_path}")
-    print(f"Biểu đồ Ma trận nhầm lẫn (Normalized) đã được lưu thành file PNG trong {OUTPUT_DIR}")
+    print(f"File Markdown cho GitHub đã được lưu tại: {md_out_path}")
+    print(f"Biểu đồ Ma trận nhầm lẫn (Aggregated Normalized) đã được lưu thành file PNG trong {OUTPUT_DIR}")
     print("="*60)
     print(df_results.to_markdown(index=False))
 

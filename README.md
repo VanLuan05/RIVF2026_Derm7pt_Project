@@ -10,7 +10,7 @@ Dự án áp dụng Học sâu đa phương thức (Multimodal Deep Learning) đ
 Dự án tích hợp các phương pháp Trí tuệ Nhân tạo Giải thích được (Explainable AI - XAI) thông qua **Grad-CAM** và kỹ thuật **Concept Intervention** (Can thiệp khái niệm lâm sàng) nhằm nâng cao độ tin cậy trong y tế.
 
 ## Tính năng Cốt lõi (MLOps Standard)
-* **Chia tách dữ liệu an toàn (Data Splitting):** Phân chia tập dữ liệu nghiêm ngặt theo ID Bệnh nhân (Patient-level) để ngăn chặn tuyệt đối hiện tượng rò rỉ dữ liệu (Data Leakage - Chuẩn P0).
+* **Chia tách dữ liệu an toàn (Data Splitting):** Phân chia tập dữ liệu nghiêm ngặt theo ID Bệnh nhân (Case-level grouped split) để ngăn chặn tuyệt đối hiện tượng rò rỉ dữ liệu (Data Leakage - Chuẩn P0).
 * **Mô hình Khái niệm Chuỗi (Sequential CBM):** Hỗ trợ Bác sĩ can thiệp (human-in-the-loop) vào các khái niệm lâm sàng một cách an toàn để cải thiện độ chính xác chẩn đoán.
 * **Đánh giá Khách quan (Robust Evaluation):** Tự động hóa quá trình huấn luyện và kiểm thử với 3 hạt giống ngẫu nhiên (3-seed automation) để đảm bảo độ tin cậy của các chỉ số thống kê (Mean ± SD).
 
@@ -44,7 +44,7 @@ Bước 2: Huấn luyện Tự động Hàng loạt (Ablation Training)
 -- Tự động huấn luyện các mô hình baseline từ B1 đến B5 và mô hình Master_P2 qua 3 seed ngẫu nhiên (42, 100, 2026).
 #  python -m src.run_ablation
 Bước 3: Đánh giá & Trích xuất Chỉ số (Evaluation)
--- Chấm điểm 18 phiên bản mô hình trên tập Test độc lập và tự động xuất báo cáo tổng hợp ra file outputs/final_results_summary.csv.
+-- Chấm điểm 21 phiên bản (7 cấu hình × 3 seeds) mô hình trên tập Test độc lập và tự động xuất báo cáo tổng hợp ra file outputs/final_results_summary.csv.
 #  python -m src.run_evaluation
 Bước 4: Bác sĩ Can thiệp Lâm sàng (Sequential CBM)
 -- Đo lường sự gia tăng F1-Score khi có sự hợp tác giữa AI và Bác sĩ thông qua mô hình chuỗi độc lập.

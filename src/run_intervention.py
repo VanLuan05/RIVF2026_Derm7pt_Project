@@ -114,7 +114,14 @@ def main():
     df_results = pd.DataFrame(results)
     csv_out_path = os.path.join(OUTPUT_DIR, "intervention_results.csv")
     df_results.to_csv(csv_out_path, index=False)
-    
+
+    # KHẮC PHỤC LỖI THIẾU KẾT QUẢ TRÊN GITHUB VÀ TRÁNH GHI ĐÈ FILE
+    os.makedirs("results", exist_ok=True)
+    md_out_path = "results/intervention_results.md" # <-- Đã sửa tên file để không trùng
+    with open(md_out_path, "w", encoding="utf-8") as f:
+        f.write("### Bảng Báo cáo Concept Intervention (Can thiệp Khái niệm)\n\n") # <-- Đã sửa tiêu đề
+        f.write(df_results.to_markdown(index=False))
+        
     print("\n" + "="*60)
     print("BẢNG BÁO CÁO CONCEPT INTERVENTION (DÁN VÀO BÀI BÁO)")
     print("="*60)

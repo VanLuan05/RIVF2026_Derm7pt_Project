@@ -67,16 +67,24 @@ def main():
     test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
     
-   # 2. Khởi tạo mô hình Proposed_Hybrid
+    # 2. Khởi tạo mô hình Proposed_Hybrid
     print("Đang nạp mô hình Proposed_Hybrid...")
     try:
-        encoder = joblib.load(os.path.join(OUTPUT_DIR, "meta_encoder.joblib"))
+        # KHẮC PHỤC LỖI P0 CỦA THẦY: Trỏ cứng về thư mục outputs/ gốc thay vì OUTPUT_DIR của Grad-CAM
+        encoder = joblib.load("outputs/meta_encoder.joblib")
         dynamic_meta_dim = len(encoder.get_feature_names_out())
-    except:
+        print(f"[*] Số chiều Metadata tự động nhận diện: {dynamic_meta_dim}")
+    except Exception as e:
+        print(f"[!] Lỗi load encoder: {e}. Dùng mặc định 14 chiều.")
         dynamic_meta_dim = 14
+        
     model = MultimodalDermModel(num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=True, meta_input_dim=dynamic_meta_dim).to(device)
     
     model_path = "outputs/Proposed_Hybrid_seed_42.pth"
+    if not os.path.exists(model_path):
+         print(f"[LỖI] Không tìm thấy file {model_path}! Hãy chắc chắn bạn đã train xong 21 models.")
+         return
+         
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     
