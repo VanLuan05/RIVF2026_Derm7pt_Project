@@ -21,7 +21,7 @@ def main():
     TRAIN_CSV = os.path.join(base_dir, "processed/train_split.csv")
     TEST_CSV = os.path.join(base_dir, "processed/test_split.csv") # Dùng tập Test theo chuẩn đánh giá cuối
     LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = os.path.join(base_dir, "raw/images/")
+    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
     OUTPUT_DIR = "outputs/"
 
     # 2. Đọc số chiều Metadata tự động (KHẮC PHỤC LỖI P0)

@@ -55,7 +55,7 @@ def main():
     base_dir = "/content/drive/MyDrive/RIVF2026_Dataset/data/" if os.path.exists("/content/drive/MyDrive/RIVF2026_Dataset/data/") else "data/"
     TEST_CSV = os.path.join(base_dir, "processed/test_split.csv")
     LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = os.path.join(base_dir, "raw/images/")
+    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
     OUTPUT_DIR = "outputs/"
     
     test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)

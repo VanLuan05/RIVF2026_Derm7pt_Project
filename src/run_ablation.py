@@ -54,7 +54,7 @@ if __name__ == "__main__":
     TRAIN_CSV = os.path.join(base_dir, "processed/train_split.csv")
     VAL_CSV = os.path.join(base_dir, "processed/val_split.csv")
     LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = os.path.join(base_dir, "raw/images/")
+    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
     
     train_dataset = MultimodalDermDataset(TRAIN_CSV, IMG_DIR, LABEL_MAPPING, transform=train_transforms)
     val_dataset = MultimodalDermDataset(VAL_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
@@ -93,4 +93,4 @@ if __name__ == "__main__":
             # Bổ sung dynamic_meta_dim vào vòng lặp gọi hàm
             run_experiment(exp["name"], exp["modality"], exp["bottleneck"], exp["meta"], dynamic_meta_dim, s)
             
-    print("🎉 TOÀN BỘ QUÁ TRÌNH HUẤN LUYỆN ABLATION ĐÃ HOÀN TẤT!")
+    print("TOÀN BỘ QUÁ TRÌNH HUẤN LUYỆN ABLATION ĐÃ HOÀN TẤT!")
