@@ -1,133 +1,142 @@
 import os
-import json
-import torch
 import warnings
-warnings.filterwarnings("ignore", message="X does not have valid feature names")
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
+import torch
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
+
+from src.config import Config
 from src.data.dataset import MultimodalDermDataset, test_transforms
 from src.models.models import MultimodalDermModel
 
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
+
+
+def sample_sd(values):
+    arr = np.asarray(values, dtype=float)
+    return float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+
+
+def mean_sd(values):
+    return f"{np.mean(values):.4f} ± {sample_sd(values):.4f}"
+
+
 def evaluate_intervention(model, data_loader, device):
+    """
+    Oracle intervention analysis.
+    Ground-truth dataset concepts are substituted for predicted concept probabilities.
+    This is NOT a prospective doctor study.
+    """
     model.eval()
-    all_labels = []
-    preds_ai_only = []
-    preds_with_doctor = []
-    
+    labels_all, pred_ai_all, pred_oracle_all = [], [], []
+
     with torch.no_grad():
         for batch in data_loader:
-            clinic_img = batch['clinic_img'].to(device)
-            derm_img = batch['derm_img'].to(device)
-            meta_features = batch['metadata'].to(device)
-            labels = batch['label_disease'].numpy()
-            
-            # Nhãn Concept "vàng" (Ground truth) được coi như Bác sĩ khám chuẩn 100%
-            # ÁP DỤNG LABEL SMOOTHING: Thay nhãn cứng (1/0) bằng nhãn mềm (0.95/0.05) để chống sốc phân phối
-            doctor_concepts_hard = batch['concept_labels'].to(device).float()
-            doctor_concepts = torch.where(doctor_concepts_hard == 1.0, torch.tensor(0.95).to(device), torch.tensor(0.05).to(device))
-            
-            # KỊCH BẢN 1: AI tự chẩn đoán toàn bộ
-            logits_ai, _ = model(clinic_img, derm_img, meta_features=meta_features)
-            p_ai = torch.argmax(torch.softmax(logits_ai, dim=1), dim=1).cpu().numpy()
-            
-            # KỊCH BẢN 2: Bác sĩ can thiệp (Ép mô hình dùng nhãn Concept chuẩn)
-            logits_doc, _ = model(clinic_img, derm_img, meta_features=meta_features, intervention_probs=doctor_concepts)
-            p_doc = torch.argmax(torch.softmax(logits_doc, dim=1), dim=1).cpu().numpy()
-            
-            all_labels.extend(labels)
-            preds_ai_only.extend(p_ai)
-            preds_with_doctor.extend(p_doc)
-            
-    f1_ai = f1_score(all_labels, preds_ai_only, average='macro')
-    f1_doc = f1_score(all_labels, preds_with_doctor, average='macro')
-    
-    return f1_ai, f1_doc
+            clinic_img = batch["clinic_img"].to(device)
+            derm_img = batch["derm_img"].to(device)
+            meta = batch["metadata"].to(device)
+            labels = batch["label_disease"].cpu().numpy()
+
+            # Soft oracle intervention reduces hard 0/1 distribution shock.
+            gt = batch["concept_labels"].to(device).float()
+            oracle_probs = torch.where(
+                gt > 0.5,
+                torch.full_like(gt, 0.95),
+                torch.full_like(gt, 0.05),
+            )
+
+            logits_ai, _ = model(clinic_img, derm_img, meta_features=meta)
+            logits_oracle, _ = model(
+                clinic_img,
+                derm_img,
+                meta_features=meta,
+                intervention_probs=oracle_probs,
+            )
+
+            pred_ai_all.extend(torch.argmax(logits_ai, dim=1).cpu().numpy())
+            pred_oracle_all.extend(torch.argmax(logits_oracle, dim=1).cpu().numpy())
+            labels_all.extend(labels)
+
+    f1_ai = f1_score(labels_all, pred_ai_all, average="macro", zero_division=0)
+    f1_oracle = f1_score(labels_all, pred_oracle_all, average="macro", zero_division=0)
+    return f1_ai, f1_oracle
+
 
 def main():
-    print("="*60)
-    print("MÔ PHỎNG BÁC SĨ CAN THIỆP LÂM SÀNG (CONCEPT INTERVENTION)")
-    print("="*60)
-    
+    paths = Config.runtime_paths()
+    os.makedirs(paths["results_dir"], exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # 1. Tự động nhận diện đường dẫn dữ liệu (Colab Drive hoặc Local)
-    base_dir = "/content/drive/MyDrive/RIVF2026_Dataset/data/" if os.path.exists("/content/drive/MyDrive/RIVF2026_Dataset/data/") else "data/"
-    TEST_CSV = os.path.join(base_dir, "processed/test_split.csv")
-    LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
-    OUTPUT_DIR = "outputs/"
-    
-    test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
-    workers = 2 if "content" in base_dir else 0
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=workers)
-    
-    # 2. Đọc số chiều Metadata tự động
-    try:
-        encoder = joblib.load(os.path.join(OUTPUT_DIR, "meta_encoder.joblib"))
-        dynamic_meta_dim = len(encoder.get_feature_names_out())
-    except:
-        dynamic_meta_dim = 14
-    
-    # 3. Chỉ test trên B6_PureCBM và Proposed_Hybrid (Khắc phục lỗi P0)
-    experiments = [
-        {"name": "B6_PureCBM",       "modality": "dual", "bottleneck": "pure",   "meta": True},
-        {"name": "Proposed_Hybrid",  "modality": "dual", "bottleneck": "hybrid", "meta": True}
-    ]
-    seeds = [42, 100, 2026]
-    results = []
 
+    encoder = joblib.load(paths["meta_encoder"])
+    meta_input_dim = len(encoder.get_feature_names_out())
+
+    test_dataset = MultimodalDermDataset(
+        paths["test_csv"],
+        paths["img_dir"],
+        paths["label_mapping"],
+        meta_encoder_path=paths["meta_encoder"],
+        transform=test_transforms,
+    )
+    workers = 2 if paths["data_root"].startswith("/content/") else 0
+    test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=workers)
+
+    experiments = [
+        {"name": "B6_PureCBM", "bottleneck": "pure"},
+        {"name": "Proposed_Hybrid", "bottleneck": "hybrid"},
+    ]
+
+    rows = []
     for exp in experiments:
-        exp_name = exp["name"]
-        print(f"\nThử nghiệm can thiệp trên mô hình: {exp_name}")
-        
-        f1_ai_list, f1_doc_list = [], []
-        
-        for seed in seeds:
-            model_path = os.path.join(OUTPUT_DIR, f"{exp_name}_seed_{seed}.pth")
+        f1_ai_list, f1_oracle_list = [], []
+        for seed in Config.SEEDS:
+            model_path = os.path.join(paths["output_dir"], f"{exp['name']}_seed_{seed}.pth")
             if not os.path.exists(model_path):
-                print(f"  -> Không tìm thấy file {model_path}")
+                print(f"[skip] Missing {model_path}")
                 continue
-                
+
             model = MultimodalDermModel(
-                num_classes=5, num_concepts=7, 
-                modality=exp["modality"], bottleneck_type=exp["bottleneck"], 
-                use_metadata=exp["meta"], meta_input_dim=dynamic_meta_dim # Đã bổ sung
+                num_classes=Config.NUM_CLASSES,
+                num_concepts=Config.NUM_CONCEPTS,
+                modality="dual",
+                bottleneck_type=exp["bottleneck"],
+                use_metadata=True,
+                meta_input_dim=meta_input_dim,
             ).to(device)
-            
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            
-            f1_ai, f1_doc = evaluate_intervention(model, test_loader, device)
+            model.load_state_dict(torch.load(model_path, map_location=device), strict=True)
+
+            f1_ai, f1_oracle = evaluate_intervention(model, test_loader, device)
             f1_ai_list.append(f1_ai)
-            f1_doc_list.append(f1_doc)
-            
-            print(f"  -> Seed {seed} | F1 AI Tự đoán: {f1_ai:.4f} => Có Bác sĩ: {f1_doc:.4f} ({(f1_doc - f1_ai):+.4f})")
-            
+            f1_oracle_list.append(f1_oracle)
+            print(
+                f"{exp['name']} seed={seed}: AI={f1_ai:.4f}, "
+                f"oracle={f1_oracle:.4f}, delta={f1_oracle - f1_ai:+.4f}"
+            )
+
         if f1_ai_list:
-            results.append({
-                "Model": exp_name,
-                "Macro F1 (AI Only)": f"{np.mean(f1_ai_list):.4f} ± {np.std(f1_ai_list):.4f}",
-                "Macro F1 (With Doctor)": f"{np.mean(f1_doc_list):.4f} ± {np.std(f1_doc_list):.4f}",
-                "Absolute Improvement": f"+{(np.mean(f1_doc_list) - np.mean(f1_ai_list)):.4f}"
+            delta = np.mean(f1_oracle_list) - np.mean(f1_ai_list)
+            rows.append({
+                "Model": exp["name"],
+                "Macro F1 (AI concepts)": mean_sd(f1_ai_list),
+                "Macro F1 (Oracle concepts)": mean_sd(f1_oracle_list),
+                "Delta": f"{delta:+.4f}",
             })
 
-    df_results = pd.DataFrame(results)
-    csv_out_path = os.path.join(OUTPUT_DIR, "intervention_results.csv")
-    df_results.to_csv(csv_out_path, index=False)
+    df = pd.DataFrame(rows)
+    out_path = os.path.join(paths["results_dir"], "intervention_results.md")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("# Oracle Concept Intervention Analysis\n\n")
+        f.write(
+            "Ground-truth Derm7pt concept labels are used as an oracle substitute for predicted concepts. "
+            "This analysis diagnoses concept dependence; it must not be described as a real doctor intervention study.\n\n"
+        )
+        f.write(df.to_markdown(index=False))
 
-    # KHẮC PHỤC LỖI THIẾU KẾT QUẢ TRÊN GITHUB VÀ TRÁNH GHI ĐÈ FILE
-    os.makedirs("results", exist_ok=True)
-    md_out_path = "results/intervention_results.md" # <-- Đã sửa tên file để không trùng
-    with open(md_out_path, "w", encoding="utf-8") as f:
-        f.write("### Bảng Báo cáo Concept Intervention (Can thiệp Khái niệm)\n\n") # <-- Đã sửa tiêu đề
-        f.write(df_results.to_markdown(index=False))
-        
-    print("\n" + "="*60)
-    print("BẢNG BÁO CÁO CONCEPT INTERVENTION (DÁN VÀO BÀI BÁO)")
-    print("="*60)
-    print(df_results.to_markdown(index=False))
+    print("\n" + df.to_markdown(index=False))
+    print(f"\nSaved: {out_path}")
+
 
 if __name__ == "__main__":
     main()

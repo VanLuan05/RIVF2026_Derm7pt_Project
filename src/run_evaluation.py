@@ -1,205 +1,290 @@
-import os
 import json
-import torch
+import os
 import warnings
-warnings.filterwarnings("ignore", message="X does not have valid feature names")
-import numpy as np
-import pandas as pd
+
 import joblib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
-from sklearn.metrics import (accuracy_score, f1_score, balanced_accuracy_score, 
-                             precision_score, recall_score, roc_auc_score, confusion_matrix)
+import torch
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from torch.utils.data import DataLoader
+
+from src.config import Config
 from src.data.dataset import MultimodalDermDataset, test_transforms
 from src.models.models import MultimodalDermModel
 
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
+
+
+def sample_sd(values):
+    values = np.asarray(values, dtype=float)
+    return float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+
+
+def mean_sd(values, nan_safe=False):
+    arr = np.asarray(values, dtype=float)
+    if nan_safe:
+        mean = float(np.nanmean(arr))
+        valid = arr[~np.isnan(arr)]
+        sd = sample_sd(valid)
+    else:
+        mean = float(np.mean(arr))
+        sd = sample_sd(arr)
+    return f"{mean:.4f} ± {sd:.4f}"
+
+
 def plot_normalized_confusion_matrix(cm, classes, save_path, title):
-    """Hàm vẽ và lưu Normalized Confusion Matrix"""
-    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    cm_normalized = np.nan_to_num(cm_normalized) # Tránh lỗi chia cho 0
-    
+    row_sums = cm.sum(axis=1, keepdims=True)
+    cm_normalized = np.divide(
+        cm.astype(float),
+        row_sums,
+        out=np.zeros_like(cm, dtype=float),
+        where=row_sums != 0,
+    )
+
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm_normalized, annot=True, fmt='.2f', cmap='Blues', 
-                xticklabels=classes, yticklabels=classes)
+    sns.heatmap(
+        cm_normalized,
+        annot=True,
+        fmt=".2f",
+        cmap="Blues",
+        xticklabels=classes,
+        yticklabels=classes,
+    )
     plt.title(title)
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
+    plt.ylabel("True Label")
+    plt.xlabel("Predicted Label")
     plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
+    plt.savefig(save_path, dpi=200)
     plt.close()
 
-def evaluate_single_model(model, data_loader, device, num_classes=5):
+
+def evaluate_single_model(model, data_loader, device, num_classes):
     model.eval()
     all_labels, all_preds, all_probs = [], [], []
-    
+
     with torch.no_grad():
         for batch in data_loader:
-            clinic_img, derm_img = batch['clinic_img'].to(device), batch['derm_img'].to(device)
-            meta_features = batch['metadata'].to(device)
-            labels = batch['label_disease'].numpy()
-            
-            disease_logits, _ = model(clinic_img, derm_img, meta_features=meta_features)
+            clinic_img = batch["clinic_img"].to(device)
+            derm_img = batch["derm_img"].to(device)
+            meta_features = batch["metadata"].to(device)
+            labels = batch["label_disease"].cpu().numpy()
+
+            disease_logits, _ = model(
+                clinic_img,
+                derm_img,
+                meta_features=meta_features,
+            )
             probs = torch.softmax(disease_logits, dim=1).cpu().numpy()
             preds = np.argmax(probs, axis=1)
-            
+
             all_labels.extend(labels)
             all_preds.extend(preds)
             all_probs.extend(probs)
-            
-    all_labels = np.array(all_labels)
-    all_preds = np.array(all_preds)
-    all_probs = np.array(all_probs)
-    
-    # 1. Các chỉ số Cơ bản & Nâng cao (Macro Average)
-    acc = accuracy_score(all_labels, all_preds)
-    b_acc = balanced_accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
-    precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
-    recall = recall_score(all_labels, all_preds, average='macro', zero_division=0)
-    
+
+    y_true = np.asarray(all_labels)
+    y_pred = np.asarray(all_preds)
+    y_prob = np.asarray(all_probs)
+
+    acc = accuracy_score(y_true, y_pred)
+    bacc = balanced_accuracy_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    precision = precision_score(y_true, y_pred, average="macro", zero_division=0)
+    recall = recall_score(y_true, y_pred, average="macro", zero_division=0)
+
     try:
-        auroc = roc_auc_score(all_labels, all_probs, multi_class='ovr', average='macro')
-    except:
+        auroc = roc_auc_score(y_true, y_prob, multi_class="ovr", average="macro")
+    except ValueError:
         auroc = np.nan
-    
-    # 2. Tính Sensitivity (Recall) và Specificity trên từng lớp
-    cm = confusion_matrix(all_labels, all_preds, labels=range(num_classes))
+
+    cm = confusion_matrix(y_true, y_pred, labels=range(num_classes))
     sensitivity, specificity = [], []
-    
     for i in range(num_classes):
         tp = cm[i, i]
-        fn = np.sum(cm[i, :]) - tp
-        fp = np.sum(cm[:, i]) - tp
-        tn = np.sum(cm) - (tp + fp + fn)
-        
-        sens = tp / (tp + fn) if (tp + fn) > 0 else 0
-        spec = tn / (tn + fp) if (tn + fp) > 0 else 0
-        
-        sensitivity.append(sens)
-        specificity.append(spec)
+        fn = cm[i, :].sum() - tp
+        fp = cm[:, i].sum() - tp
+        tn = cm.sum() - tp - fn - fp
+        sensitivity.append(tp / (tp + fn) if (tp + fn) else 0.0)
+        specificity.append(tn / (tn + fp) if (tn + fp) else 0.0)
 
-    macro_specificity = np.mean(specificity)
-    
-    metrics = {
-        "acc": acc, "b_acc": b_acc, "f1": f1,
-        "precision": precision, "recall": recall, 
-        "auroc": auroc, "macro_spec": macro_specificity,
-        "cm": cm, "sens_per_class": sensitivity, "spec_per_class": specificity
+    return {
+        "accuracy": acc,
+        "balanced_accuracy": bacc,
+        "macro_f1": f1,
+        "macro_precision": precision,
+        "macro_recall": recall,
+        "auroc": auroc,
+        "macro_specificity": float(np.mean(specificity)),
+        "cm": cm,
+        "sensitivity": sensitivity,
+        "specificity": specificity,
     }
-    return metrics
+
 
 def main():
-    print("="*60)
-    print("BẮT ĐẦU CHẤM ĐIỂM (ADVANCED EVALUATION) TRÊN TẬP TEST")
-    print("="*60)
-    
+    paths = Config.runtime_paths()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    base_dir = "/content/drive/MyDrive/RIVF2026_Dataset/data/" if os.path.exists("/content/drive/MyDrive/RIVF2026_Dataset/data/") else "data/"
-    TEST_CSV = os.path.join(base_dir, "processed/test_split.csv")
-    LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
-    OUTPUT_DIR = "outputs/"
-    
-    # Load Label Mapping
-    with open(LABEL_MAPPING, 'r') as f:
+    os.makedirs(paths["results_dir"], exist_ok=True)
+    os.makedirs(paths["output_dir"], exist_ok=True)
+
+    if not os.path.exists(paths["meta_encoder"]):
+        raise FileNotFoundError("Thiếu meta_encoder.joblib. Hãy chạy prepare_data.py trước.")
+
+    with open(paths["label_mapping"], "r", encoding="utf-8") as f:
         disease_to_idx = json.load(f)
-    disease_names = [k for k, v in sorted(disease_to_idx.items(), key=lambda item: item[1])]
-    
-    test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
-    workers = 2 if "content" in base_dir else 0 
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=workers)
-    
-    try:
-        encoder = joblib.load(os.path.join(OUTPUT_DIR, "meta_encoder.joblib"))
-        dynamic_meta_dim = len(encoder.get_feature_names_out())
-    except:
-        dynamic_meta_dim = 14
+    disease_names = [
+        name for name, _ in sorted(disease_to_idx.items(), key=lambda item: item[1])
+    ]
+
+    encoder = joblib.load(paths["meta_encoder"])
+    meta_input_dim = len(encoder.get_feature_names_out())
+
+    test_dataset = MultimodalDermDataset(
+        paths["test_csv"],
+        paths["img_dir"],
+        paths["label_mapping"],
+        meta_encoder_path=paths["meta_encoder"],
+        transform=test_transforms,
+    )
+    workers = 2 if paths["data_root"].startswith("/content/") else 0
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=workers,
+    )
 
     experiments = [
         {"name": "B1_Clinical_Only", "modality": "clinic_only", "bottleneck": "none", "meta": False},
-        {"name": "B2_Derm_Only",     "modality": "derm_only",   "bottleneck": "none", "meta": False},
-        {"name": "B3_Meta_Only",     "modality": "meta_only",   "bottleneck": "none", "meta": True},
-        {"name": "B4_Dual_NoMeta",   "modality": "dual",        "bottleneck": "none", "meta": False},
-        {"name": "B5_Dual_Metadata", "modality": "dual",        "bottleneck": "none", "meta": True},
-        {"name": "B6_PureCBM",       "modality": "dual",        "bottleneck": "pure", "meta": True},
-        {"name": "Proposed_Hybrid",  "modality": "dual",        "bottleneck": "hybrid", "meta": True}
+        {"name": "B2_Derm_Only", "modality": "derm_only", "bottleneck": "none", "meta": False},
+        {"name": "B3_Meta_Only", "modality": "meta_only", "bottleneck": "none", "meta": True},
+        {"name": "B4_Dual_NoMeta", "modality": "dual", "bottleneck": "none", "meta": False},
+        {"name": "B5_Dual_Metadata", "modality": "dual", "bottleneck": "none", "meta": True},
+        {"name": "B6_PureCBM", "modality": "dual", "bottleneck": "pure", "meta": True},
+        {"name": "Proposed_Hybrid", "modality": "dual", "bottleneck": "hybrid", "meta": True},
     ]
-    seeds = [42, 100, 2026]
-    
-    results_macro = []
-    
-    for exp in experiments:
-        exp_name = exp["name"]
-        print(f"\nĐang đánh giá mô hình: {exp_name}")
-        
-        metrics_dict = {"acc": [], "b_acc": [], "f1": [], "precision": [], "recall": [], "auroc": [], "spec": []}
-        
-        # KHẮC PHỤC LỖI P1: Tạo ma trận rỗng để cộng dồn 3 seeds, loại bỏ bias
-        total_aggregated_cm = np.zeros((5, 5))
-        
-        for seed in seeds:
-            model_path = os.path.join(OUTPUT_DIR, f"{exp_name}_seed_{seed}.pth")
-            if not os.path.exists(model_path):
-                print(f"  -> Bỏ qua Seed {seed}: Không tìm thấy file")
-                continue
-                
-            model = MultimodalDermModel(
-                num_classes=5, num_concepts=7, 
-                modality=exp["modality"], bottleneck_type=exp["bottleneck"], 
-                use_metadata=exp["meta"], meta_input_dim=dynamic_meta_dim
-            ).to(device)
-            
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            
-            res = evaluate_single_model(model, test_loader, device, num_classes=5)
-            metrics_dict["acc"].append(res["acc"])
-            metrics_dict["b_acc"].append(res["b_acc"])
-            metrics_dict["f1"].append(res["f1"])
-            metrics_dict["precision"].append(res["precision"])
-            metrics_dict["recall"].append(res["recall"])
-            metrics_dict["auroc"].append(res["auroc"])
-            metrics_dict["spec"].append(res["macro_spec"])
-            
-            # Cộng dồn ma trận của seed hiện tại vào tổng
-            total_aggregated_cm += res["cm"]
-            
-            print(f"  -> Seed {seed} | F1: {res['f1']:.4f} | AUROC: {res['auroc']:.4f} | Prec: {res['precision']:.4f} | Rec: {res['recall']:.4f}")
-            
-        if metrics_dict["acc"]:
-            results_macro.append({
-                "Model": exp_name,
-                "Accuracy": f"{np.mean(metrics_dict['acc']):.4f} ± {np.std(metrics_dict['acc']):.4f}",
-                "Macro F1": f"{np.mean(metrics_dict['f1']):.4f} ± {np.std(metrics_dict['f1']):.4f}",
-                "Macro Precision": f"{np.mean(metrics_dict['precision']):.4f} ± {np.std(metrics_dict['precision']):.4f}",
-                "Macro Recall": f"{np.mean(metrics_dict['recall']):.4f} ± {np.std(metrics_dict['recall']):.4f}",
-                "Macro Specificity": f"{np.mean(metrics_dict['spec']):.4f} ± {np.std(metrics_dict['spec']):.4f}",
-                "One-vs-Rest AUROC": f"{np.mean(metrics_dict['auroc']):.4f} ± {np.std(metrics_dict['auroc']):.4f}"
-            })
-            
-            # Vẽ 1 bức ảnh CM duy nhất từ ma trận đã cộng gộp 3 seeds
-            cm_path = os.path.join(OUTPUT_DIR, f"{exp_name}_aggregated_normalized_cm.png")
-            plot_normalized_confusion_matrix(total_aggregated_cm, disease_names, cm_path, f"Aggregated Normalized CM - {exp_name}")
 
-    # Xuất báo cáo tổng hợp
-    df_results = pd.DataFrame(results_macro)
-    csv_out_path = os.path.join(OUTPUT_DIR, "final_advanced_results_summary.csv")
-    df_results.to_csv(csv_out_path, index=False)
-    
-    # KHẮC PHỤC LỖI THIẾU KẾT QUẢ TRÊN GITHUB: Tạo file Markdown
-    os.makedirs("results", exist_ok=True)
-    md_out_path = "results/final_results.md"
-    with open(md_out_path, "w", encoding="utf-8") as f:
-        f.write("### Bảng Tổng hợp Kết quả Thực nghiệm (Mean ± SD trên 3 Seeds)\n\n")
-        f.write(df_results.to_markdown(index=False))
-    
-    print("\n" + "="*60)
-    print(f"ĐÃ HOÀN TẤT ĐÁNH GIÁ NÂNG CAO!")
-    print(f"Bảng kết quả tổng hợp: {csv_out_path}")
-    print(f"File Markdown cho GitHub đã được lưu tại: {md_out_path}")
-    print(f"Biểu đồ Ma trận nhầm lẫn (Aggregated Normalized) đã được lưu thành file PNG trong {OUTPUT_DIR}")
-    print("="*60)
-    print(df_results.to_markdown(index=False))
+    summary_rows = []
+    per_class_rows = []
+
+    for exp in experiments:
+        metric_lists = {
+            "accuracy": [],
+            "balanced_accuracy": [],
+            "macro_f1": [],
+            "macro_precision": [],
+            "macro_recall": [],
+            "macro_specificity": [],
+            "auroc": [],
+        }
+        sens_by_class = [[] for _ in disease_names]
+        spec_by_class = [[] for _ in disease_names]
+        aggregated_cm = np.zeros((Config.NUM_CLASSES, Config.NUM_CLASSES), dtype=float)
+        used_seeds = []
+
+        print(f"\nEvaluating {exp['name']} on independent Test set")
+        for seed in Config.SEEDS:
+            model_path = os.path.join(paths["output_dir"], f"{exp['name']}_seed_{seed}.pth")
+            if not os.path.exists(model_path):
+                print(f"  [skip] Missing {model_path}")
+                continue
+
+            model = MultimodalDermModel(
+                num_classes=Config.NUM_CLASSES,
+                num_concepts=Config.NUM_CONCEPTS,
+                modality=exp["modality"],
+                bottleneck_type=exp["bottleneck"],
+                use_metadata=exp["meta"],
+                meta_input_dim=meta_input_dim,
+            ).to(device)
+            state = torch.load(model_path, map_location=device)
+            model.load_state_dict(state, strict=True)
+
+            res = evaluate_single_model(model, test_loader, device, Config.NUM_CLASSES)
+            used_seeds.append(seed)
+            for key in metric_lists:
+                metric_lists[key].append(res[key])
+            aggregated_cm += res["cm"]
+            for i in range(Config.NUM_CLASSES):
+                sens_by_class[i].append(res["sensitivity"][i])
+                spec_by_class[i].append(res["specificity"][i])
+
+            print(
+                f"  seed={seed} | F1={res['macro_f1']:.4f} | "
+                f"BAcc={res['balanced_accuracy']:.4f} | AUROC={res['auroc']:.4f}"
+            )
+
+        if not used_seeds:
+            continue
+
+        summary_rows.append(
+            {
+                "Model": exp["name"],
+                "Seeds": ",".join(map(str, used_seeds)),
+                "Accuracy": mean_sd(metric_lists["accuracy"]),
+                "Balanced Accuracy": mean_sd(metric_lists["balanced_accuracy"]),
+                "Macro F1": mean_sd(metric_lists["macro_f1"]),
+                "Macro Precision": mean_sd(metric_lists["macro_precision"]),
+                "Macro Recall": mean_sd(metric_lists["macro_recall"]),
+                "Macro Specificity": mean_sd(metric_lists["macro_specificity"]),
+                "One-vs-Rest AUROC": mean_sd(metric_lists["auroc"], nan_safe=True),
+            }
+        )
+
+        for i, class_name in enumerate(disease_names):
+            per_class_rows.append(
+                {
+                    "Model": exp["name"],
+                    "Class": class_name,
+                    "Sensitivity": mean_sd(sens_by_class[i]),
+                    "Specificity": mean_sd(spec_by_class[i]),
+                }
+            )
+
+        cm_path = os.path.join(
+            paths["output_dir"], f"{exp['name']}_aggregated_normalized_cm.png"
+        )
+        plot_normalized_confusion_matrix(
+            aggregated_cm,
+            disease_names,
+            cm_path,
+            f"Aggregated Normalized Confusion Matrix - {exp['name']}",
+        )
+
+    summary_df = pd.DataFrame(summary_rows)
+    per_class_df = pd.DataFrame(per_class_rows)
+
+    summary_csv = os.path.join(paths["output_dir"], "final_advanced_results_summary.csv")
+    summary_df.to_csv(summary_csv, index=False)
+
+    final_md = os.path.join(paths["results_dir"], "final_results.md")
+    with open(final_md, "w", encoding="utf-8") as f:
+        f.write("# Final Test Results\n\n")
+        f.write(
+            "All models are evaluated on the independent Test split after checkpoint selection on Validation only. "
+            "Values are mean ± sample SD across independent random seeds.\n\n"
+        )
+        f.write(summary_df.to_markdown(index=False))
+
+    per_class_md = os.path.join(paths["results_dir"], "per_class_results.md")
+    with open(per_class_md, "w", encoding="utf-8") as f:
+        f.write("# Per-class Sensitivity and Specificity\n\n")
+        f.write(per_class_df.to_markdown(index=False))
+
+    print("\n" + summary_df.to_markdown(index=False))
+    print(f"\nSaved: {final_md}")
+    print(f"Saved: {per_class_md}")
+
 
 if __name__ == "__main__":
     main()
