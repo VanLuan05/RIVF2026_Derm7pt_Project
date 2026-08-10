@@ -1,0 +1,15 @@
+{
+  "experiment_name": "B3_Meta_Only_seed_100",
+  "best_epoch": 20,
+  "monitor": "disease_f1",
+  "best_val_disease_macro_f1": 0.31670473115611386,
+  "best_val_loss": 1.390024447441101,
+  "val_concept_macro_f1_at_best_epoch": null,
+  "alpha": 0.0,
+  "optimizer": "AdamW",
+  "learning_rate": 5e-05,
+  "weight_decay": 0.0001,
+  "num_epochs_max": 20,
+  "patience": 5,
+  "min_delta": 0.0001
+}
