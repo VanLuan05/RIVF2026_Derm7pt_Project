@@ -1,38 +1,58 @@
-import os
 import json
+import os
+import re
 import warnings
-import torch
+
 import joblib
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from torch.utils.data import DataLoader
+
+from src.config import Config
 from src.data.dataset import MultimodalDermDataset, test_transforms
 from src.models.models import MultimodalDermModel
 
-# Chặn cảnh báo rác của scikit-learn để log sạch sẽ
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
-def inverse_normalize(tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
-    """Đưa ảnh từ Tensor về lại định dạng RGB để hiển thị"""
-    for t, m, s in zip(tensor, mean, std):
-        t.mul_(s).add_(m)
-    return torch.clamp(tensor, 0, 1).permute(1, 2, 0).cpu().numpy()
 
-# =====================================================================
-# LỚP VỎ BỌC (WRAPPER) ĐỂ XỬ LÝ LỖI MULTIMODAL CHO THƯ VIỆN GRAD-CAM
-# =====================================================================
+def inverse_normalize(
+    tensor,
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225),
+):
+    """Return an RGB float image in [0, 1] without modifying input."""
+    img = tensor.detach().clone().cpu()
+    mean_t = torch.tensor(mean).view(3, 1, 1)
+    std_t = torch.tensor(std).view(3, 1, 1)
+    img = img * std_t + mean_t
+    img = torch.clamp(img, 0, 1)
+    return img.permute(1, 2, 0).numpy().astype(np.float32)
+
+
+def safe_name(text):
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(text)).strip("_")
+
+
 class ClinicCamWrapper(torch.nn.Module):
     def __init__(self, model, derm_img, meta_features):
         super().__init__()
         self.model = model
         self.derm_img = derm_img
         self.meta_features = meta_features
+
     def forward(self, clinic_img):
-        logits, _ = self.model(clinic_img, self.derm_img, meta_features=self.meta_features)
+        logits, _ = self.model(
+            clinic_img,
+            self.derm_img,
+            meta_features=self.meta_features,
+        )
         return logits
+
 
 class DermCamWrapper(torch.nn.Module):
     def __init__(self, model, clinic_img, meta_features):
@@ -40,119 +60,214 @@ class DermCamWrapper(torch.nn.Module):
         self.model = model
         self.clinic_img = clinic_img
         self.meta_features = meta_features
+
     def forward(self, derm_img):
-        logits, _ = self.model(self.clinic_img, derm_img, meta_features=self.meta_features)
+        logits, _ = self.model(
+            self.clinic_img,
+            derm_img,
+            meta_features=self.meta_features,
+        )
         return logits
-# =====================================================================
+
 
 def main():
-    print("="*60)
-    print("TRÍCH XUẤT GRAD-CAM (SUCCESS & FAILURE CASES)")
-    print("="*60)
-    
+    paths = Config.ensure_runtime_dirs()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # 1. Đường dẫn và Dữ liệu
-    base_dir = "data/"
-    TEST_CSV = os.path.join(base_dir, "processed/test_split.csv")
-    LABEL_MAPPING = os.path.join(base_dir, "processed/label_mapping.json")
-    IMG_DIR = "/content/local_images/" if os.path.exists("/content/local_images/") else os.path.join(base_dir, "raw/images/")
-    OUTPUT_DIR = "outputs/gradcam_results/"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
-    with open(LABEL_MAPPING, 'r') as f:
-        disease_to_idx = json.load(f)
-    idx_to_disease = {v: k for k, v in disease_to_idx.items()}
-    
-    test_dataset = MultimodalDermDataset(TEST_CSV, IMG_DIR, LABEL_MAPPING, transform=test_transforms)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-    
-    # 2. Khởi tạo mô hình Proposed_Hybrid
-    print("Đang nạp mô hình Proposed_Hybrid...")
-    try:
-        # KHẮC PHỤC LỖI P0 CỦA THẦY: Trỏ cứng về thư mục outputs/ gốc thay vì OUTPUT_DIR của Grad-CAM
-        encoder = joblib.load("outputs/meta_encoder.joblib")
-        dynamic_meta_dim = len(encoder.get_feature_names_out())
-        print(f"[*] Số chiều Metadata tự động nhận diện: {dynamic_meta_dim}")
-    except Exception as e:
-        print(f"[!] Lỗi load encoder: {e}. Dùng mặc định 14 chiều.")
-        dynamic_meta_dim = 14
-        
-    model = MultimodalDermModel(num_classes=5, num_concepts=7, modality='dual', bottleneck_type='hybrid', use_metadata=True, meta_input_dim=dynamic_meta_dim).to(device)
-    
-    model_path = "outputs/Proposed_Hybrid_seed_42.pth"
-    if not os.path.exists(model_path):
-         print(f"[LỖI] Không tìm thấy file {model_path}! Hãy chắc chắn bạn đã train xong 21 models.")
-         return
-         
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    
-    saved_counts = {"Success": 0, "Failure": 0}
-    max_per_category = 5 # Xuất 5 ca đúng, 5 ca sai để phân tích
-    
-    print("Đang quét tập Test để tạo ảnh Grad-CAM...")
-    for i, batch in enumerate(test_loader):
-        if saved_counts["Success"] >= max_per_category and saved_counts["Failure"] >= max_per_category:
-            break
-            
-        c_img = batch['clinic_img'].to(device)
-        d_img = batch['derm_img'].to(device)
-        meta = batch['metadata'].to(device)
-        true_label_idx = batch['label_disease'].item()
-        true_label_name = idx_to_disease[true_label_idx]
-        
-        # Dự đoán để phân loại Đúng/Sai
-        logits, _ = model(c_img, d_img, meta_features=meta)
-        probs = F.softmax(logits, dim=1)
-        pred_prob, pred_idx = torch.max(probs, dim=1)
-        pred_label_name = idx_to_disease[pred_idx.item()]
-        confidence = pred_prob.item() * 100
-        
-        status = "Success" if true_label_idx == pred_idx.item() else "Failure"
-        if saved_counts[status] >= max_per_category:
-            continue
-            
-        # 3. Tạo Wrapper và chạy Grad-CAM cho từng ảnh trong Batch
-        clinic_model_wrapped = ClinicCamWrapper(model, d_img, meta)
-        derm_model_wrapped = DermCamWrapper(model, c_img, meta)
-        
-        cam_clinic = GradCAM(model=clinic_model_wrapped, target_layers=[model.clinic_backbone[-2][-1]])
-        cam_derm = GradCAM(model=derm_model_wrapped, target_layers=[model.derm_backbone[-2][-1]])
-        
-        # Tính toán Heatmap
-        grayscale_cam_clinic = cam_clinic(input_tensor=c_img, targets=None)[0, :]
-        grayscale_cam_derm = cam_derm(input_tensor=d_img, targets=None)[0, :]
-        
-        # Giải phóng bộ nhớ CAM ngay sau khi dùng
-        del cam_clinic, cam_derm 
-        
-        # Chuyển ảnh gốc về RGB numpy
-        rgb_c_img = inverse_normalize(c_img[0])
-        rgb_d_img = inverse_normalize(d_img[0])
-        
-        # Áp mask màu lên ảnh
-        cam_image_clinic = show_cam_on_image(rgb_c_img, grayscale_cam_clinic, use_rgb=True)
-        cam_image_derm = show_cam_on_image(rgb_d_img, grayscale_cam_derm, use_rgb=True)
-        
-        # Vẽ biểu đồ kết hợp
-        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-        fig.suptitle(f"[{status}] True: {true_label_name} | Pred: {pred_label_name} (Conf: {confidence:.1f}%)", fontsize=14, fontweight='bold', color='green' if status=="Success" else 'red')
-        
-        axes[0].imshow(rgb_c_img); axes[0].set_title("Clinic Image"); axes[0].axis('off')
-        axes[1].imshow(cam_image_clinic); axes[1].set_title("Clinic Grad-CAM"); axes[1].axis('off')
-        axes[2].imshow(rgb_d_img); axes[2].set_title("Dermoscopy Image"); axes[2].axis('off')
-        axes[3].imshow(cam_image_derm); axes[3].set_title("Dermoscopy Grad-CAM"); axes[3].axis('off')
-        
-        plt.tight_layout()
-        save_path = os.path.join(OUTPUT_DIR, f"{status}_{i}_True_{true_label_name}_Pred_{pred_label_name}.png")
-        plt.savefig(save_path, dpi=150)
-        plt.close()
-        
-        saved_counts[status] += 1
-        print(f"Đã lưu ảnh {status}: {save_path}")
 
-    print("Hoàn tất xuất ảnh XAI! Vui lòng vào thư mục outputs/gradcam_results/ để xem.")
+    output_dir = os.path.join(
+        paths["output_dir"], "gradcam_results"
+    )
+    os.makedirs(output_dir, exist_ok=True)
+
+    required = [
+        paths["test_csv"],
+        paths["label_mapping"],
+        paths["meta_encoder"],
+    ]
+    missing = [p for p in required if not os.path.exists(p)]
+    if missing:
+        raise FileNotFoundError(
+            "Thiếu file Grad-CAM:\n- " + "\n- ".join(missing)
+        )
+
+    with open(paths["label_mapping"], "r", encoding="utf-8") as f:
+        disease_to_idx = json.load(f)
+    idx_to_disease = {int(v): k for k, v in disease_to_idx.items()}
+
+    encoder = joblib.load(paths["meta_encoder"])
+    meta_input_dim = len(encoder.get_feature_names_out())
+
+    dataset = MultimodalDermDataset(
+        paths["test_csv"],
+        paths["img_dir"],
+        paths["label_mapping"],
+        meta_encoder_path=paths["meta_encoder"],
+        transform=test_transforms,
+    )
+
+    # Deterministic order: Grad-CAM examples are not selected by Test score.
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=0,
+    )
+
+    seed = Config.GRADCAM_SEED
+    model_path = os.path.join(
+        paths["output_dir"],
+        f"Proposed_Hybrid_seed_{seed}.pth",
+    )
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Không tìm thấy {model_path}. "
+            "Hãy train đủ 21 models trước."
+        )
+
+    model = MultimodalDermModel(
+        num_classes=Config.NUM_CLASSES,
+        num_concepts=Config.NUM_CONCEPTS,
+        modality="dual",
+        bottleneck_type="hybrid",
+        use_metadata=True,
+        meta_input_dim=meta_input_dim,
+    ).to(device)
+
+    model.load_state_dict(
+        torch.load(model_path, map_location=device),
+        strict=True,
+    )
+    model.eval()
+
+    # Aim for one success and one failure example per true class.
+    saved = {
+        "Success": set(),
+        "Failure": set(),
+    }
+
+    print(
+        f"Generating Grad-CAM from pre-specified "
+        f"Proposed_Hybrid seed={seed}"
+    )
+
+    for i, batch in enumerate(loader):
+        if (
+            len(saved["Success"]) >= Config.NUM_CLASSES
+            and len(saved["Failure"]) >= Config.NUM_CLASSES
+        ):
+            break
+
+        c_img = batch["clinic_img"].to(device)
+        d_img = batch["derm_img"].to(device)
+        meta = batch["metadata"].to(device)
+        true_idx = int(batch["label_disease"].item())
+
+        with torch.inference_mode():
+            logits, _ = model(
+                c_img,
+                d_img,
+                meta_features=meta,
+            )
+            probs = F.softmax(logits, dim=1)
+            confidence_t, pred_idx_t = torch.max(probs, dim=1)
+
+        pred_idx = int(pred_idx_t.item())
+        confidence = float(confidence_t.item())
+
+        status = "Success" if pred_idx == true_idx else "Failure"
+
+        # Keep at most one example per true class per status.
+        if true_idx in saved[status]:
+            continue
+
+        target = [ClassifierOutputTarget(pred_idx)]
+
+        clinic_wrapper = ClinicCamWrapper(model, d_img, meta)
+        derm_wrapper = DermCamWrapper(model, c_img, meta)
+
+        clinic_target_layer = model.clinic_backbone[-2][-1]
+        derm_target_layer = model.derm_backbone[-2][-1]
+
+        with GradCAM(
+            model=clinic_wrapper,
+            target_layers=[clinic_target_layer],
+        ) as cam:
+            grayscale_clinic = cam(
+                input_tensor=c_img,
+                targets=target,
+            )[0]
+
+        with GradCAM(
+            model=derm_wrapper,
+            target_layers=[derm_target_layer],
+        ) as cam:
+            grayscale_derm = cam(
+                input_tensor=d_img,
+                targets=target,
+            )[0]
+
+        rgb_c = inverse_normalize(c_img[0])
+        rgb_d = inverse_normalize(d_img[0])
+
+        cam_c = show_cam_on_image(
+            rgb_c, grayscale_clinic, use_rgb=True
+        )
+        cam_d = show_cam_on_image(
+            rgb_d, grayscale_derm, use_rgb=True
+        )
+
+        true_name = idx_to_disease[true_idx]
+        pred_name = idx_to_disease[pred_idx]
+
+        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+        fig.suptitle(
+            f"[{status}] True: {true_name} | "
+            f"Pred: {pred_name} | "
+            f"Confidence: {100 * confidence:.1f}%",
+            fontsize=13,
+            fontweight="bold",
+        )
+
+        axes[0].imshow(rgb_c)
+        axes[0].set_title("Clinical Image")
+        axes[0].axis("off")
+
+        axes[1].imshow(cam_c)
+        axes[1].set_title("Clinical Grad-CAM")
+        axes[1].axis("off")
+
+        axes[2].imshow(rgb_d)
+        axes[2].set_title("Dermoscopy Image")
+        axes[2].axis("off")
+
+        axes[3].imshow(cam_d)
+        axes[3].set_title("Dermoscopy Grad-CAM")
+        axes[3].axis("off")
+
+        plt.tight_layout(rect=(0, 0, 1, 0.90))
+
+        save_path = os.path.join(
+            output_dir,
+            (
+                f"{status}_true-{safe_name(true_name)}_"
+                f"pred-{safe_name(pred_name)}_idx-{i}.png"
+            ),
+        )
+        plt.savefig(save_path, dpi=200, bbox_inches="tight")
+        plt.close(fig)
+
+        saved[status].add(true_idx)
+        print(f"Saved: {save_path}")
+
+    print(
+        "\nGrad-CAM complete. "
+        f"Success classes represented={len(saved['Success'])}/"
+        f"{Config.NUM_CLASSES}; "
+        f"Failure classes represented={len(saved['Failure'])}/"
+        f"{Config.NUM_CLASSES}."
+    )
+    print(f"Output directory: {output_dir}")
+
 
 if __name__ == "__main__":
     main()

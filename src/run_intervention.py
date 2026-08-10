@@ -5,7 +5,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader
 
 from src.config import Config
@@ -21,34 +21,51 @@ def sample_sd(values):
 
 
 def mean_sd(values):
-    return f"{np.mean(values):.4f} ± {sample_sd(values):.4f}"
+    arr = np.asarray(values, dtype=float)
+    return f"{np.mean(arr):.4f} ± {sample_sd(arr):.4f}"
+
+
+def soft_oracle(concepts):
+    return torch.where(
+        concepts > 0.5,
+        torch.full_like(concepts, Config.ORACLE_POS_PROB),
+        torch.full_like(concepts, Config.ORACLE_NEG_PROB),
+    )
 
 
 def evaluate_intervention(model, data_loader, device):
     """
-    Oracle intervention analysis.
-    Ground-truth dataset concepts are substituted for predicted concept probabilities.
-    This is NOT a prospective doctor study.
+    Oracle concept substitution on the same trained model.
+
+    Ground-truth dataset concepts are converted to 0.05/0.95 soft
+    probabilities to reduce the distribution shock of replacing learned
+    probabilities by exact binary values.
+
+    This is an oracle analysis, NOT a prospective clinician study.
     """
     model.eval()
-    labels_all, pred_ai_all, pred_oracle_all = [], [], []
 
-    with torch.no_grad():
+    labels_all = []
+    pred_ai_all = []
+    pred_oracle_all = []
+
+    with torch.inference_mode():
         for batch in data_loader:
-            clinic_img = batch["clinic_img"].to(device)
-            derm_img = batch["derm_img"].to(device)
-            meta = batch["metadata"].to(device)
+            clinic_img = batch["clinic_img"].to(device, non_blocking=True)
+            derm_img = batch["derm_img"].to(device, non_blocking=True)
+            meta = batch["metadata"].to(device, non_blocking=True)
             labels = batch["label_disease"].cpu().numpy()
 
-            # Soft oracle intervention reduces hard 0/1 distribution shock.
-            gt = batch["concept_labels"].to(device).float()
-            oracle_probs = torch.where(
-                gt > 0.5,
-                torch.full_like(gt, 0.95),
-                torch.full_like(gt, 0.05),
-            )
+            gt = batch["concept_labels"].to(
+                device, non_blocking=True
+            ).float()
+            oracle_probs = soft_oracle(gt)
 
-            logits_ai, _ = model(clinic_img, derm_img, meta_features=meta)
+            logits_ai, _ = model(
+                clinic_img,
+                derm_img,
+                meta_features=meta,
+            )
             logits_oracle, _ = model(
                 clinic_img,
                 derm_img,
@@ -56,19 +73,49 @@ def evaluate_intervention(model, data_loader, device):
                 intervention_probs=oracle_probs,
             )
 
-            pred_ai_all.extend(torch.argmax(logits_ai, dim=1).cpu().numpy())
-            pred_oracle_all.extend(torch.argmax(logits_oracle, dim=1).cpu().numpy())
+            pred_ai_all.extend(
+                torch.argmax(logits_ai, dim=1).cpu().numpy()
+            )
+            pred_oracle_all.extend(
+                torch.argmax(logits_oracle, dim=1).cpu().numpy()
+            )
             labels_all.extend(labels)
 
-    f1_ai = f1_score(labels_all, pred_ai_all, average="macro", zero_division=0)
-    f1_oracle = f1_score(labels_all, pred_oracle_all, average="macro", zero_division=0)
-    return f1_ai, f1_oracle
+    class_labels = list(range(Config.NUM_CLASSES))
+
+    f1_ai = f1_score(
+        labels_all,
+        pred_ai_all,
+        labels=class_labels,
+        average="macro",
+        zero_division=0,
+    )
+    f1_oracle = f1_score(
+        labels_all,
+        pred_oracle_all,
+        labels=class_labels,
+        average="macro",
+        zero_division=0,
+    )
+    acc_ai = accuracy_score(labels_all, pred_ai_all)
+    acc_oracle = accuracy_score(labels_all, pred_oracle_all)
+
+    return {
+        "f1_ai": float(f1_ai),
+        "f1_oracle": float(f1_oracle),
+        "acc_ai": float(acc_ai),
+        "acc_oracle": float(acc_oracle),
+    }
 
 
 def main():
-    paths = Config.runtime_paths()
-    os.makedirs(paths["results_dir"], exist_ok=True)
+    paths = Config.ensure_runtime_dirs()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if not os.path.exists(paths["meta_encoder"]):
+        raise FileNotFoundError(
+            f"Thiếu metadata encoder: {paths['meta_encoder']}"
+        )
 
     encoder = joblib.load(paths["meta_encoder"])
     meta_input_dim = len(encoder.get_feature_names_out())
@@ -81,21 +128,46 @@ def main():
         transform=test_transforms,
     )
     workers = 2 if paths["data_root"].startswith("/content/") else 0
-    test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=workers)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=workers,
+        pin_memory=torch.cuda.is_available(),
+    )
 
     experiments = [
         {"name": "B6_PureCBM", "bottleneck": "pure"},
         {"name": "Proposed_Hybrid", "bottleneck": "hybrid"},
     ]
 
-    rows = []
+    expected = [
+        os.path.join(
+            paths["output_dir"],
+            f"{exp['name']}_seed_{seed}.pth",
+        )
+        for exp in experiments
+        for seed in Config.SEEDS
+    ]
+    missing = [p for p in expected if not os.path.exists(p)]
+    if missing:
+        raise FileNotFoundError(
+            "Thiếu checkpoint cho oracle intervention:\n- "
+            + "\n- ".join(missing)
+        )
+
+    per_seed_rows = []
+    summary_rows = []
+
     for exp in experiments:
         f1_ai_list, f1_oracle_list = [], []
+        acc_ai_list, acc_oracle_list = [], []
+
         for seed in Config.SEEDS:
-            model_path = os.path.join(paths["output_dir"], f"{exp['name']}_seed_{seed}.pth")
-            if not os.path.exists(model_path):
-                print(f"[skip] Missing {model_path}")
-                continue
+            model_path = os.path.join(
+                paths["output_dir"],
+                f"{exp['name']}_seed_{seed}.pth",
+            )
 
             model = MultimodalDermModel(
                 num_classes=Config.NUM_CLASSES,
@@ -105,36 +177,73 @@ def main():
                 use_metadata=True,
                 meta_input_dim=meta_input_dim,
             ).to(device)
-            model.load_state_dict(torch.load(model_path, map_location=device), strict=True)
 
-            f1_ai, f1_oracle = evaluate_intervention(model, test_loader, device)
-            f1_ai_list.append(f1_ai)
-            f1_oracle_list.append(f1_oracle)
-            print(
-                f"{exp['name']} seed={seed}: AI={f1_ai:.4f}, "
-                f"oracle={f1_oracle:.4f}, delta={f1_oracle - f1_ai:+.4f}"
+            model.load_state_dict(
+                torch.load(model_path, map_location=device),
+                strict=True,
             )
 
-        if f1_ai_list:
-            delta = np.mean(f1_oracle_list) - np.mean(f1_ai_list)
-            rows.append({
-                "Model": exp["name"],
-                "Macro F1 (AI concepts)": mean_sd(f1_ai_list),
-                "Macro F1 (Oracle concepts)": mean_sd(f1_oracle_list),
-                "Delta": f"{delta:+.4f}",
-            })
+            res = evaluate_intervention(model, test_loader, device)
 
-    df = pd.DataFrame(rows)
-    out_path = os.path.join(paths["results_dir"], "intervention_results.md")
+            f1_ai_list.append(res["f1_ai"])
+            f1_oracle_list.append(res["f1_oracle"])
+            acc_ai_list.append(res["acc_ai"])
+            acc_oracle_list.append(res["acc_oracle"])
+
+            per_seed_rows.append(
+                {
+                    "Model": exp["name"],
+                    "Seed": seed,
+                    "Accuracy AI": res["acc_ai"],
+                    "Accuracy Oracle": res["acc_oracle"],
+                    "Delta Accuracy": res["acc_oracle"] - res["acc_ai"],
+                    "Macro F1 AI": res["f1_ai"],
+                    "Macro F1 Oracle": res["f1_oracle"],
+                    "Delta Macro F1": res["f1_oracle"] - res["f1_ai"],
+                }
+            )
+
+            print(
+                f"{exp['name']} seed={seed}: "
+                f"F1 AI={res['f1_ai']:.4f}, "
+                f"F1 oracle={res['f1_oracle']:.4f}, "
+                f"delta={res['f1_oracle'] - res['f1_ai']:+.4f}"
+            )
+
+        summary_rows.append(
+            {
+                "Model": exp["name"],
+                "Accuracy AI": mean_sd(acc_ai_list),
+                "Accuracy Oracle": mean_sd(acc_oracle_list),
+                "Macro F1 AI": mean_sd(f1_ai_list),
+                "Macro F1 Oracle": mean_sd(f1_oracle_list),
+                "Mean Delta Macro F1": (
+                    f"{np.mean(np.asarray(f1_oracle_list) - np.asarray(f1_ai_list)):+.4f}"
+                ),
+            }
+        )
+
+    per_seed_df = pd.DataFrame(per_seed_rows)
+    summary_df = pd.DataFrame(summary_rows)
+
+    out_path = os.path.join(
+        paths["results_dir"], "intervention_results.md"
+    )
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("# Oracle Concept Intervention Analysis\n\n")
         f.write(
-            "Ground-truth Derm7pt concept labels are used as an oracle substitute for predicted concepts. "
-            "This analysis diagnoses concept dependence; it must not be described as a real doctor intervention study.\n\n"
+            "Ground-truth Derm7pt concept labels are substituted as soft "
+            f"oracle probabilities ({Config.ORACLE_NEG_PROB:.2f}/"
+            f"{Config.ORACLE_POS_PROB:.2f}). This diagnoses concept "
+            "dependence and must not be described as a real doctor "
+            "intervention study.\n\n"
         )
-        f.write(df.to_markdown(index=False))
+        f.write("## Per-seed results\n\n")
+        f.write(per_seed_df.to_markdown(index=False, floatfmt=".4f"))
+        f.write("\n\n## Summary\n\n")
+        f.write(summary_df.to_markdown(index=False))
 
-    print("\n" + df.to_markdown(index=False))
+    print("\n" + summary_df.to_markdown(index=False))
     print(f"\nSaved: {out_path}")
 
 

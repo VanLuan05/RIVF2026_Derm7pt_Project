@@ -12,7 +12,9 @@ structured metadata;
 
 seven clinically motivated Derm7pt concepts;
 
-a Hybrid Concept Bottleneck Model (Hybrid CBM);
+a Pure Concept Bottleneck Model (Pure CBM);
+
+a proposed Hybrid Concept Bottleneck Model (Hybrid CBM);
 
 Grad-CAM and oracle concept analyses for interpretability.
 
@@ -22,17 +24,19 @@ Multimodal learning with metadata — quantify the value of clinical, dermoscopi
 
 Concept-based modeling — compare black-box multimodal baselines, Pure CBM and Proposed Hybrid CBM.
 
-Rigorous ablation/evaluation — independent Validation/Test use, three training seeds, macro metrics, class-wise analysis and confidence intervals.
+Rigorous ablation/evaluation — Validation-only model/hyperparameter selection, three training seeds, independent Test evaluation, macro metrics, class-wise analysis and confidence intervals.
 
 OOD detection and conformal prediction are outside the current main scope.
 
 2. Important terminology
 
-The current split uses GroupShuffleSplit(groups=case_num). Therefore, the repository describes it as a case-level grouped split. It should only be called a patient-level split if Derm7pt documentation independently confirms that case_num uniquely identifies patients.
+The current data preparation uses GroupShuffleSplit(groups=case_num). Therefore, this repository describes the split as a case-level grouped split. It should only be called a patient-level split if Derm7pt documentation independently confirms that case_num uniquely identifies patients.
 
-Ground-truth concept substitution is reported as oracle concept intervention, not as a real doctor study.
+Ground-truth concept substitution is reported as oracle concept analysis/intervention, not as a real clinician study.
 
-3. Experimental models
+3. Final experimental models
+
+run_ablation.py trains all seven architectures:
 
 B1_Clinical_Only
 
@@ -48,17 +52,25 @@ B6_PureCBM
 
 Proposed_Hybrid
 
-Each final model is trained with seeds 42, 100, and 2026.
+Each architecture is trained with seeds 42, 100, and 2026.
 
-4. Protocol lock
+Total: 7 architectures × 3 seeds = 21 paper checkpoints.
 
-The paper-ready protocol uses:
+There is no separate train_final_hybrid.py step in the final workflow.
+
+4. Locked training protocol
+
+All paper models use the same core protocol:
 
 AdamW;
 
+learning rate 5e-5;
+
+weight decay 1e-4;
+
 weighted Cross-Entropy for disease classification;
 
-weighted BCEWithLogitsLoss for concepts;
+weighted BCEWithLogitsLoss for concepts when a concept head exists;
 
 explicit concept-loss coefficient alpha;
 
@@ -66,74 +78,127 @@ checkpoint selection by Validation Disease Macro-F1;
 
 early stopping using Validation only;
 
-Test used only after model/hyperparameter selection is locked;
+Test used only after the protocol is locked;
 
-mean ± sample standard deviation across independent seeds.
+results reported as mean ± sample SD across three seeds.
 
-run_alpha_ablation.py writes the selected coefficient to outputs/selected_alpha.json. train_final_hybrid.py reads that file automatically.
+run_alpha_ablation.py chooses the final alpha using Validation only and writes:
 
-5. Reproducibility pipeline
+outputs/selected_alpha.json
 
-Run from the repository root.
+run_ablation.py refuses to start without this file.
 
-pip install -r requirements.txt
+5. Colab storage policy
 
-Step 1 — Prepare data and metadata encoder
+For faster training, copy images from Drive to Colab local storage once per session:
+
+rm -rf /content/local_images
+cp -a /content/drive/MyDrive/RIVF2026_Dataset/data/raw/images /content/local_images
+
+Config.runtime_paths() prefers /content/local_images when it exists. Otherwise it falls back to data/raw/images.
+
+To preserve checkpoints/results across Colab resets, symlink repository folders to Google Drive:
+
+import os
+
+PERSIST = "/content/drive/MyDrive/RIVF2026_Dataset"
+os.makedirs(f"{PERSIST}/outputs", exist_ok=True)
+os.makedirs(f"{PERSIST}/results", exist_ok=True)
+
+%cd /content/RIVF2026_Derm7pt_Project
+
+!cp -a outputs/. "$PERSIST/outputs/" 2>/dev/null || true
+!cp -a results/. "$PERSIST/results/" 2>/dev/null || true
+
+!rm -rf outputs results
+!ln -s "$PERSIST/outputs" outputs
+!ln -s "$PERSIST/results" results
+
+6. Paper-final execution order
+
+Run from the repository root. Do not skip the audit/alpha gates.
+
+Step 1 — Prepare data
 
 python -m src.data.prepare_data
 
-Step 2 — Audit split distribution and case overlap
+This creates the processed Train/Validation/Calibration/Test splits, the common label mapping, and the metadata encoder.
+
+Step 2 — Audit the split and image references
 
 python -m src.check_distribution
 
-Inspect results/split_audit.md before training.
+Inspect:
 
-Step 3 — Final alpha confirmation on Validation only
+results/split_audit.md
+
+Training should not start if this command raises an error.
+
+Step 3 — Confirm alpha on Validation only
 
 python -m src.run_alpha_ablation
 
-This compares the final alpha candidates under the same optimizer, weighted losses, early stopping and checkpoint-selection protocol used for final training.
+Inspect:
 
-Step 4 — Train baselines B1–B6
+cat outputs/selected_alpha.json
+cat results/alpha_ablation_final.md
+
+No Test metric is used to select alpha.
+
+Step 4 — Train all 21 paper models
 
 python -m src.run_ablation
 
-Step 5 — Train the final Proposed Hybrid model
+Expected checkpoint pattern:
 
-python -m src.train_final_hybrid
+B1_Clinical_Only_seed_42.pth
+...
+B6_PureCBM_seed_2026.pth
+Proposed_Hybrid_seed_42.pth
+Proposed_Hybrid_seed_100.pth
+Proposed_Hybrid_seed_2026.pth
 
-Step 6 — Run independent Test evaluation
+The training manifest is saved to:
+
+results/ablation_training_manifest.json
+
+Step 5 — Independent Test evaluation
 
 python -m src.run_evaluation
 
-Outputs:
+Main result:
 
 results/final_results.md
 
-results/per_class_results.md
-
-aggregated normalized confusion matrices in outputs/
-
-Step 7 — Evaluate concept prediction quality
+Step 6 — Concept prediction evaluation
 
 python -m src.concept_evaluation
 
-Output:
+Main result:
 
 results/concept_metrics.md
 
-Step 8 — Concept-dependence analyses
+Step 7 — Direct oracle concept substitution
 
 python -m src.run_intervention
+
+Main result:
+
+results/intervention_results.md
+
+Step 8 — Sequential CBM concept-quality gap analysis
+
 python -m src.sequential_cbm
 
-These are oracle analyses, not prospective clinical-user studies.
+Main result:
+
+results/sequential_cbm_results.md
 
 Step 9 — Bootstrap confidence intervals
 
 python -m src.bootstrap_eval
 
-Output:
+Main result:
 
 results/bootstrap_ci.md
 
@@ -141,36 +206,30 @@ Step 10 — Grad-CAM
 
 python -m src.gradcam_vis
 
-Use a seed chosen a priori or by Validation protocol; do not choose a visually favorable seed based on Test performance.
+Figures are written to:
 
-6. How to report current comparisons
+outputs/gradcam_results/
 
-Do not claim that the Proposed Hybrid model is universally superior unless the regenerated final table supports that statement across the chosen primary metric. Report each metric faithfully. In particular, distinguish:
+7. Interpretation rules for the paper
 
-the primary classification metric (recommended: Macro-F1 for imbalanced five-class classification);
+Do not claim the Proposed Hybrid model is universally superior unless the final Test table supports that statement for the stated primary metric.
 
-Accuracy and AUROC as complementary metrics;
+Do not select a seed using Test performance.
 
-concept prediction metrics separately from disease metrics.
+Do not tune alpha or other hyperparameters using Test.
 
-7. Repository outputs that should be committed
+Do not describe case_num grouping as patient-level without independent confirmation.
 
-Commit aggregate, non-patient-level reports such as:
+Do not describe ground-truth concept substitution as a real doctor intervention.
 
-results/alpha_ablation_final.md
+Keep the three-seed mean ± sample SD as the primary training-run uncertainty report.
 
-results/split_audit.md
+Treat the three-seed probability ensemble in bootstrap_eval.py as a secondary analysis.
 
-results/final_results.md
+8. Environment
 
-results/per_class_results.md
+Install dependencies with:
 
-results/concept_metrics.md
+pip install -r requirements.txt
 
-results/intervention_results.md
-
-results/sequential_cbm_results.md
-
-results/bootstrap_ci.md
-
-Do not commit raw patient/image data or model checkpoints if licensing/privacy/storage constraints prohibit it.
+The repository expects PyTorch, torchvision, NumPy, pandas, scikit-learn, Pillow, matplotlib, seaborn, joblib, tqdm, tabulate and grad-cam.

@@ -22,23 +22,42 @@ def sample_sd(values):
 
 
 def mean_sd(values):
-    return f"{np.mean(values):.4f} ± {sample_sd(values):.4f}"
+    arr = np.asarray(values, dtype=float)
+    return f"{np.mean(arr):.4f} ± {sample_sd(arr):.4f}"
 
 
 def extract_features(model, loader, device):
-    true_disease, true_concepts, pred_concepts, metadata = [], [], [], []
+    true_disease = []
+    true_concepts = []
+    pred_concepts = []
+    metadata = []
+
     model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in loader:
-            c_img = batch["clinic_img"].to(device)
-            d_img = batch["derm_img"].to(device)
-            meta = batch["metadata"].to(device)
-            _, concept_logits = model(c_img, d_img, meta_features=meta)
+            c_img = batch["clinic_img"].to(device, non_blocking=True)
+            d_img = batch["derm_img"].to(device, non_blocking=True)
+            meta = batch["metadata"].to(device, non_blocking=True)
+
+            _, concept_logits = model(
+                c_img,
+                d_img,
+                meta_features=meta,
+            )
+            if concept_logits is None:
+                raise RuntimeError("B6 PureCBM phải có concept head.")
+
             concept_probs = torch.sigmoid(concept_logits)
 
-            true_disease.extend(batch["label_disease"].cpu().numpy())
-            true_concepts.extend(batch["concept_labels"].cpu().numpy())
-            pred_concepts.extend(concept_probs.cpu().numpy())
+            true_disease.extend(
+                batch["label_disease"].cpu().numpy()
+            )
+            true_concepts.extend(
+                batch["concept_labels"].cpu().numpy()
+            )
+            pred_concepts.extend(
+                concept_probs.cpu().numpy()
+            )
             metadata.extend(meta.cpu().numpy())
 
     return (
@@ -49,13 +68,39 @@ def extract_features(model, loader, device):
     )
 
 
+def _soft_oracle_np(concepts):
+    return np.where(
+        concepts > 0.5,
+        Config.ORACLE_POS_PROB,
+        Config.ORACLE_NEG_PROB,
+    ).astype(np.float32)
+
+
 def main():
-    paths = Config.runtime_paths()
-    os.makedirs(paths["results_dir"], exist_ok=True)
+    """
+    Sequential concept-quality gap analysis.
+
+    For each B6 seed, two downstream logistic classifiers are trained
+    using TRAIN only:
+
+    1) Predicted-concept sequential classifier:
+       train predicted concept probabilities + metadata -> disease.
+       It is evaluated on Test predicted concepts.
+
+    2) Oracle-concept upper bound:
+       train soft ground-truth concepts + metadata -> disease.
+       It is evaluated on Test soft ground-truth concepts.
+
+    The difference estimates how much downstream performance is limited
+    by concept prediction quality without feeding a classifier inputs from
+    a distribution it was not trained on.
+    """
+    paths = Config.ensure_runtime_dirs()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     encoder = joblib.load(paths["meta_encoder"])
     meta_input_dim = len(encoder.get_feature_names_out())
+
     workers = 2 if paths["data_root"].startswith("/content/") else 0
 
     train_dataset = MultimodalDermDataset(
@@ -72,18 +117,44 @@ def main():
         meta_encoder_path=paths["meta_encoder"],
         transform=test_transforms,
     )
-    train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=workers)
-    test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=workers)
 
-    seed_rows = []
-    f1_before_all, f1_after_all = [], []
-    acc_before_all, acc_after_all = [], []
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    checkpoint_paths = [
+        os.path.join(
+            paths["output_dir"], f"B6_PureCBM_seed_{seed}.pth"
+        )
+        for seed in Config.SEEDS
+    ]
+    missing = [p for p in checkpoint_paths if not os.path.exists(p)]
+    if missing:
+        raise FileNotFoundError(
+            "Thiếu B6 checkpoint:\n- " + "\n- ".join(missing)
+        )
+
+    per_seed_rows = []
+    pred_f1_all, oracle_f1_all = [], []
+    pred_acc_all, oracle_acc_all = [], []
+
+    class_labels = list(range(Config.NUM_CLASSES))
 
     for seed in Config.SEEDS:
-        model_path = os.path.join(paths["output_dir"], f"B6_PureCBM_seed_{seed}.pth")
-        if not os.path.exists(model_path):
-            print(f"[skip] Missing {model_path}")
-            continue
+        model_path = os.path.join(
+            paths["output_dir"], f"B6_PureCBM_seed_{seed}.pth"
+        )
 
         model = MultimodalDermModel(
             num_classes=Config.NUM_CLASSES,
@@ -93,72 +164,127 @@ def main():
             use_metadata=True,
             meta_input_dim=meta_input_dim,
         ).to(device)
-        model.load_state_dict(torch.load(model_path, map_location=device), strict=True)
 
-        y_train_d, y_train_c, _, x_train_meta = extract_features(model, train_loader, device)
-        y_test_d, y_test_c, x_test_pred_c, x_test_meta = extract_features(model, test_loader, device)
+        model.load_state_dict(
+            torch.load(model_path, map_location=device),
+            strict=True,
+        )
 
-        # Sequential CBM: disease classifier is trained on ground-truth concepts + metadata.
-        x_train_seq = np.hstack([y_train_c, x_train_meta])
-        clf = LogisticRegression(
+        (
+            y_train_d,
+            y_train_true_c,
+            x_train_pred_c,
+            x_train_meta,
+        ) = extract_features(model, train_loader, device)
+
+        (
+            y_test_d,
+            y_test_true_c,
+            x_test_pred_c,
+            x_test_meta,
+        ) = extract_features(model, test_loader, device)
+
+        # A. Realistic sequential classifier: trained and tested on
+        # predicted concept probability distributions.
+        x_train_pred = np.hstack(
+            [x_train_pred_c, x_train_meta]
+        )
+        x_test_pred = np.hstack(
+            [x_test_pred_c, x_test_meta]
+        )
+
+        clf_pred = LogisticRegression(
             class_weight="balanced",
             max_iter=2000,
             random_state=seed,
         )
-        clf.fit(x_train_seq, y_train_d)
+        clf_pred.fit(x_train_pred, y_train_d)
+        pred_from_predicted = clf_pred.predict(x_test_pred)
 
-        x_test_ai = np.hstack([x_test_pred_c, x_test_meta])
-        x_test_oracle = np.hstack([y_test_c, x_test_meta])
-        pred_before = clf.predict(x_test_ai)
-        pred_after = clf.predict(x_test_oracle)
+        # B. Oracle upper bound: train/test both use the same soft-oracle
+        # concept representation, avoiding a train-test concept shift.
+        x_train_oracle = np.hstack(
+            [_soft_oracle_np(y_train_true_c), x_train_meta]
+        )
+        x_test_oracle = np.hstack(
+            [_soft_oracle_np(y_test_true_c), x_test_meta]
+        )
 
-        f1_before = f1_score(y_test_d, pred_before, average="macro", zero_division=0)
-        f1_after = f1_score(y_test_d, pred_after, average="macro", zero_division=0)
-        acc_before = accuracy_score(y_test_d, pred_before)
-        acc_after = accuracy_score(y_test_d, pred_after)
+        clf_oracle = LogisticRegression(
+            class_weight="balanced",
+            max_iter=2000,
+            random_state=seed,
+        )
+        clf_oracle.fit(x_train_oracle, y_train_d)
+        pred_from_oracle = clf_oracle.predict(x_test_oracle)
 
-        f1_before_all.append(f1_before)
-        f1_after_all.append(f1_after)
-        acc_before_all.append(acc_before)
-        acc_after_all.append(acc_after)
+        pred_f1 = f1_score(
+            y_test_d,
+            pred_from_predicted,
+            labels=class_labels,
+            average="macro",
+            zero_division=0,
+        )
+        oracle_f1 = f1_score(
+            y_test_d,
+            pred_from_oracle,
+            labels=class_labels,
+            average="macro",
+            zero_division=0,
+        )
+        pred_acc = accuracy_score(y_test_d, pred_from_predicted)
+        oracle_acc = accuracy_score(y_test_d, pred_from_oracle)
 
-        seed_rows.append(
+        pred_f1_all.append(pred_f1)
+        oracle_f1_all.append(oracle_f1)
+        pred_acc_all.append(pred_acc)
+        oracle_acc_all.append(oracle_acc)
+
+        per_seed_rows.append(
             {
                 "Seed": seed,
-                "Accuracy AI Concepts": acc_before,
-                "Accuracy Oracle Concepts": acc_after,
-                "Macro F1 AI Concepts": f1_before,
-                "Macro F1 Oracle Concepts": f1_after,
-                "Delta Macro F1": f1_after - f1_before,
+                "Accuracy Predicted Concepts": pred_acc,
+                "Accuracy Oracle Concepts": oracle_acc,
+                "Macro F1 Predicted Concepts": pred_f1,
+                "Macro F1 Oracle Concepts": oracle_f1,
+                "Oracle Gap Macro F1": oracle_f1 - pred_f1,
             }
         )
 
-    if not seed_rows:
-        raise RuntimeError("Không có B6 checkpoint nào để chạy Sequential CBM.")
+    per_seed_df = pd.DataFrame(per_seed_rows)
+    summary_df = pd.DataFrame(
+        [
+            {
+                "Seed": "Mean ± sample SD",
+                "Accuracy Predicted Concepts": mean_sd(pred_acc_all),
+                "Accuracy Oracle Concepts": mean_sd(oracle_acc_all),
+                "Macro F1 Predicted Concepts": mean_sd(pred_f1_all),
+                "Macro F1 Oracle Concepts": mean_sd(oracle_f1_all),
+                "Oracle Gap Macro F1": (
+                    f"{np.mean(np.asarray(oracle_f1_all) - np.asarray(pred_f1_all)):+.4f}"
+                ),
+            }
+        ]
+    )
 
-    summary_row = {
-        "Seed": "Mean ± sample SD",
-        "Accuracy AI Concepts": mean_sd(acc_before_all),
-        "Accuracy Oracle Concepts": mean_sd(acc_after_all),
-        "Macro F1 AI Concepts": mean_sd(f1_before_all),
-        "Macro F1 Oracle Concepts": mean_sd(f1_after_all),
-        "Delta Macro F1": f"{np.mean(np.asarray(f1_after_all) - np.asarray(f1_before_all)):+.4f}",
-    }
-
-    seed_df = pd.DataFrame(seed_rows)
-    summary_df = pd.DataFrame([summary_row])
-    out_path = os.path.join(paths["results_dir"], "sequential_cbm_results.md")
+    out_path = os.path.join(
+        paths["results_dir"], "sequential_cbm_results.md"
+    )
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("# Sequential CBM Oracle-Concept Analysis\n\n")
+        f.write("# Sequential CBM Concept-Quality Gap Analysis\n\n")
         f.write(
-            "This is an oracle analysis using dataset ground-truth concepts; it is not a prospective doctor study.\n\n"
+            "Two downstream classifiers are trained using Train only: "
+            "one on predicted concept probabilities and one on soft "
+            "ground-truth concepts (oracle upper bound). Test is used only "
+            "for final evaluation. This is an oracle analysis, not a "
+            "prospective clinician study.\n\n"
         )
         f.write("## Per-seed results\n\n")
-        f.write(seed_df.to_markdown(index=False, floatfmt=".4f"))
+        f.write(per_seed_df.to_markdown(index=False, floatfmt=".4f"))
         f.write("\n\n## Summary\n\n")
         f.write(summary_df.to_markdown(index=False))
 
-    print(seed_df.to_markdown(index=False, floatfmt=".4f"))
+    print(per_seed_df.to_markdown(index=False, floatfmt=".4f"))
     print("\n" + summary_df.to_markdown(index=False))
     print(f"\nSaved: {out_path}")
 
