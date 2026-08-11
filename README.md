@@ -41,7 +41,7 @@ So sánh giữa:
 * phân tích theo từng lớp;
 * khoảng tin cậy (confidence intervals).
 
-**OOD detection** và **conformal prediction** nằm ngoài phạm vi chính của nghiên cứu hiện tại.
+**OOD detection** và **conformal prediction** chưa được thực hiện.
 
 ---
 
