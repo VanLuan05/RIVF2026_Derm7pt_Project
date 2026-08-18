@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-18T15:27:05",
+  "model": "C1_CrossAttention",
+  "fusion": "metadata-guided cross-attention",
+  "query": "structured metadata",
+  "key_value": "clinical + dermoscopic spatial tokens",
+  "d_model": 256,
+  "num_heads": 4,
+  "seeds": [
+    2026
+  ],
+  "training": [
+    {
+      "seed": 2026,
+      "checkpoint": "C1_CrossAttention_seed_2026.pth",
+      "best_epoch": 10,
+      "best_val_disease_macro_f1": 0.6053031878031878,
+      "best_val_loss": 1.1184638053178788
+    }
+  ]
+}

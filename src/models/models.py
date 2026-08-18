@@ -142,3 +142,280 @@ class MultimodalDermModel(nn.Module):
             disease_logits = self.disease_classifier(hybrid_features)
             
             return disease_logits, concept_logits
+
+
+# ================================================================
+# CONTRIBUTION 1
+# Metadata-Guided Cross-Attention Multimodal Model
+# ================================================================
+
+class C1CrossAttentionModel(nn.Module):
+    """
+    C1 Cross-Attention model.
+
+    Inputs:
+        - Clinical image
+        - Dermoscopic image
+        - Structured metadata
+
+    Cross-Attention:
+        Query       = metadata token
+        Key / Value = spatial visual tokens
+
+    Output:
+        Disease logits
+    """
+
+    def __init__(
+        self,
+        num_classes=5,
+        meta_input_dim=14,
+        d_model=256,
+        num_heads=4,
+        dropout=0.1,
+    ):
+        super().__init__()
+
+        # Giữ interface tương thích project hiện tại
+        self.modality = "dual"
+        self.bottleneck_type = "none"
+        self.use_metadata = True
+        self.meta_input_dim = meta_input_dim
+
+        # --------------------------------------------------------
+        # 1. Clinical image backbone
+        # Giữ spatial feature map, KHÔNG dùng AvgPool
+        # --------------------------------------------------------
+
+        clinic_resnet = models.resnet50(
+            weights=models.ResNet50_Weights.IMAGENET1K_V1
+        )
+
+        self.clinic_backbone = nn.Sequential(
+            *list(clinic_resnet.children())[:-2]
+        )
+
+        # --------------------------------------------------------
+        # 2. Dermoscopy backbone
+        # --------------------------------------------------------
+
+        derm_resnet = models.resnet50(
+            weights=models.ResNet50_Weights.IMAGENET1K_V1
+        )
+
+        self.derm_backbone = nn.Sequential(
+            *list(derm_resnet.children())[:-2]
+        )
+
+        # --------------------------------------------------------
+        # 3. Project visual feature: 2048 -> 256
+        # --------------------------------------------------------
+
+        self.clinic_projection = nn.Conv2d(
+            2048,
+            d_model,
+            kernel_size=1
+        )
+
+        self.derm_projection = nn.Conv2d(
+            2048,
+            d_model,
+            kernel_size=1
+        )
+
+        # --------------------------------------------------------
+        # 4. Metadata encoder
+        #
+        # Giữ cấu trúc gần baseline B5:
+        # metadata -> 64 -> 32
+        # rồi project 32 -> d_model
+        # --------------------------------------------------------
+
+        self.meta_encoder = nn.Sequential(
+            nn.Linear(meta_input_dim, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32)
+        )
+
+        self.meta_projection = nn.Linear(
+            32,
+            d_model
+        )
+
+        # --------------------------------------------------------
+        # 5. CROSS-ATTENTION
+        #
+        # Q = Metadata
+        # K = Visual tokens
+        # V = Visual tokens
+        # --------------------------------------------------------
+
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+
+        self.attention_norm = nn.LayerNorm(
+            d_model
+        )
+
+        # --------------------------------------------------------
+        # 6. Lightweight Feed Forward Network
+        # --------------------------------------------------------
+
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_model * 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 2, d_model)
+        )
+
+        self.ffn_norm = nn.LayerNorm(
+            d_model
+        )
+
+        # --------------------------------------------------------
+        # 7. Disease classifier
+        # --------------------------------------------------------
+
+        self.disease_classifier = nn.Sequential(
+            nn.Linear(d_model, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, num_classes)
+        )
+
+    def _to_tokens(
+        self,
+        feature_map,
+        projection
+    ):
+        """
+        [B, 2048, H, W]
+              ↓
+        [B, 256, H, W]
+              ↓
+        [B, H*W, 256]
+        """
+
+        x = projection(feature_map)
+
+        x = x.flatten(2)
+
+        x = x.transpose(1, 2)
+
+        return x
+
+    def forward(
+        self,
+        clinic_img,
+        derm_img,
+        meta_features=None,
+        intervention_probs=None,
+    ):
+
+        if meta_features is None:
+            raise ValueError(
+                "C1CrossAttentionModel yêu cầu metadata."
+            )
+
+        # --------------------------------------------------------
+        # Clinical spatial tokens
+        # --------------------------------------------------------
+
+        clinic_map = self.clinic_backbone(
+            clinic_img
+        )
+
+        clinic_tokens = self._to_tokens(
+            clinic_map,
+            self.clinic_projection
+        )
+
+        # --------------------------------------------------------
+        # Dermoscopic spatial tokens
+        # --------------------------------------------------------
+
+        derm_map = self.derm_backbone(
+            derm_img
+        )
+
+        derm_tokens = self._to_tokens(
+            derm_map,
+            self.derm_projection
+        )
+
+        # --------------------------------------------------------
+        # Visual memory
+        #
+        # 49 clinical tokens
+        # +
+        # 49 dermoscopic tokens
+        # =
+        # 98 visual tokens (input 224x224)
+        # --------------------------------------------------------
+
+        visual_tokens = torch.cat(
+            [
+                clinic_tokens,
+                derm_tokens
+            ],
+            dim=1
+        )
+
+        # --------------------------------------------------------
+        # Metadata Query token
+        # --------------------------------------------------------
+
+        meta_encoded = self.meta_encoder(
+            meta_features
+        )
+
+        meta_token = self.meta_projection(
+            meta_encoded
+        ).unsqueeze(1)
+
+        # --------------------------------------------------------
+        # REAL CROSS-ATTENTION
+        #
+        # Q = Metadata
+        # K = Clinical + Dermoscopy
+        # V = Clinical + Dermoscopy
+        # --------------------------------------------------------
+
+        attended_visual, _ = self.cross_attention(
+            query=meta_token,
+            key=visual_tokens,
+            value=visual_tokens,
+            need_weights=False
+        )
+
+        # Metadata residual + attended visual information
+        fused_token = self.attention_norm(
+            meta_token + attended_visual
+        )
+
+        # Feed-forward block
+        fused_token = self.ffn_norm(
+            fused_token
+            + self.ffn(fused_token)
+        )
+
+        # [B, 1, 256] -> [B, 256]
+        fused_feature = fused_token.squeeze(1)
+
+        # --------------------------------------------------------
+        # Diagnosis
+        # --------------------------------------------------------
+
+        disease_logits = self.disease_classifier(
+            fused_feature
+        )
+
+        # Giữ output interface giống project cũ
+        return disease_logits, None
