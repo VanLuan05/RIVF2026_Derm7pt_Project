@@ -1,0 +1,8 @@
+Uncertainty_Score,Error_Detection_AUROC
+1-margin,0.8159580663948748
+1-confidence,0.8114929139972821
+normalized_entropy,0.7928557561638516
+mean_probability_sd,0.7625703746845273
+mutual_information,0.7522811104639875
+max_probability_sd,0.7427683944865074
+seed_disagreement_rate,0.6906425936711317
