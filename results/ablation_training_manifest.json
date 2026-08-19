@@ -1,216 +1,47 @@
 {
-  "created_at": "2026-08-10T10:05:53",
+  "contribution": "C2 - Concept Bottleneck Models",
+  "created_at": "2026-08-19T06:55:31",
+  "manifest_status": "reconstructed_from_completed_training_metadata",
+  "concept_encoding": {
+    "num_concepts": 7,
+    "status": "corrected Derm7pt binary encoding",
+    "regression_structures_positive": [
+      "blue areas",
+      "white areas",
+      "combinations"
+    ],
+    "vascular_structures_positive": [
+      "dotted",
+      "linear irregular"
+    ]
+  },
   "selected_alpha": 2.0,
   "seeds": [
     42,
     100,
     2026
   ],
-  "num_architectures": 7,
-  "num_completed_models": 21,
+  "architectures": [
+    "B6_PureCBM",
+    "Proposed_Hybrid"
+  ],
+  "num_completed_models": 6,
   "optimizer": "AdamW",
   "learning_rate": 5e-05,
   "weight_decay": 0.0001,
   "max_epochs": 20,
   "early_stopping_patience": 5,
   "checkpoint_monitor": "validation_disease_macro_f1",
-  "metadata_input_dim": 14,
+  "concept_pos_weights": [
+    3.548872232437134,
+    2.5798816680908203,
+    2.1510417461395264,
+    2.903225898742676,
+    1.1762590408325195,
+    4.084033489227295,
+    11.604166984558105
+  ],
   "experiments": [
-    {
-      "experiment": "B1_Clinical_Only",
-      "seed": 42,
-      "modality": "clinic_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B1_Clinical_Only_seed_42.pth",
-      "best_epoch": 18,
-      "best_val_disease_macro_f1": 0.41988795518207284,
-      "best_val_loss": 1.7633322477340698,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B1_Clinical_Only",
-      "seed": 100,
-      "modality": "clinic_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B1_Clinical_Only_seed_100.pth",
-      "best_epoch": 8,
-      "best_val_disease_macro_f1": 0.4170677927182395,
-      "best_val_loss": 1.6676119565963745,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B1_Clinical_Only",
-      "seed": 2026,
-      "modality": "clinic_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B1_Clinical_Only_seed_2026.pth",
-      "best_epoch": 14,
-      "best_val_disease_macro_f1": 0.4540571865945001,
-      "best_val_loss": 1.4738389134407044,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B2_Derm_Only",
-      "seed": 42,
-      "modality": "derm_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B2_Derm_Only_seed_42.pth",
-      "best_epoch": 10,
-      "best_val_disease_macro_f1": 0.5630248403282112,
-      "best_val_loss": 1.1017665266990662,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B2_Derm_Only",
-      "seed": 100,
-      "modality": "derm_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B2_Derm_Only_seed_100.pth",
-      "best_epoch": 18,
-      "best_val_disease_macro_f1": 0.6402015331690006,
-      "best_val_loss": 1.0525848507881164,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B2_Derm_Only",
-      "seed": 2026,
-      "modality": "derm_only",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B2_Derm_Only_seed_2026.pth",
-      "best_epoch": 14,
-      "best_val_disease_macro_f1": 0.6284681130834977,
-      "best_val_loss": 1.0742651402950287,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B3_Meta_Only",
-      "seed": 42,
-      "modality": "meta_only",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B3_Meta_Only_seed_42.pth",
-      "best_epoch": 7,
-      "best_val_disease_macro_f1": 0.30188077371101246,
-      "best_val_loss": 1.493665051460266,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B3_Meta_Only",
-      "seed": 100,
-      "modality": "meta_only",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B3_Meta_Only_seed_100.pth",
-      "best_epoch": 20,
-      "best_val_disease_macro_f1": 0.31670473115611386,
-      "best_val_loss": 1.390024447441101,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B3_Meta_Only",
-      "seed": 2026,
-      "modality": "meta_only",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B3_Meta_Only_seed_2026.pth",
-      "best_epoch": 9,
-      "best_val_disease_macro_f1": 0.3055410049672232,
-      "best_val_loss": 1.4793418645858765,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B4_Dual_NoMeta",
-      "seed": 42,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B4_Dual_NoMeta_seed_42.pth",
-      "best_epoch": 10,
-      "best_val_disease_macro_f1": 0.5378248533739863,
-      "best_val_loss": 1.1999331891536713,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B4_Dual_NoMeta",
-      "seed": 100,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B4_Dual_NoMeta_seed_100.pth",
-      "best_epoch": 2,
-      "best_val_disease_macro_f1": 0.4748647107992003,
-      "best_val_loss": 1.1849349975585937,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B4_Dual_NoMeta",
-      "seed": 2026,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": false,
-      "alpha": 0.0,
-      "checkpoint": "B4_Dual_NoMeta_seed_2026.pth",
-      "best_epoch": 10,
-      "best_val_disease_macro_f1": 0.558961038961039,
-      "best_val_loss": 1.0122742176055908,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B5_Dual_Metadata",
-      "seed": 42,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B5_Dual_Metadata_seed_42.pth",
-      "best_epoch": 16,
-      "best_val_disease_macro_f1": 0.6033451165226499,
-      "best_val_loss": 1.118749749660492,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B5_Dual_Metadata",
-      "seed": 100,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B5_Dual_Metadata_seed_100.pth",
-      "best_epoch": 15,
-      "best_val_disease_macro_f1": 0.6494239888792109,
-      "best_val_loss": 0.9617741942405701,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
-    {
-      "experiment": "B5_Dual_Metadata",
-      "seed": 2026,
-      "modality": "dual",
-      "bottleneck": "none",
-      "use_metadata": true,
-      "alpha": 0.0,
-      "checkpoint": "B5_Dual_Metadata_seed_2026.pth",
-      "best_epoch": 13,
-      "best_val_disease_macro_f1": 0.6044214608920492,
-      "best_val_loss": 1.051603800058365,
-      "val_concept_macro_f1_at_best_epoch": null
-    },
     {
       "experiment": "B6_PureCBM",
       "seed": 42,
@@ -219,10 +50,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "B6_PureCBM_seed_42.pth",
-      "best_epoch": 20,
-      "best_val_disease_macro_f1": 0.513962703962704,
-      "best_val_loss": 2.8047637939453125,
-      "val_concept_macro_f1_at_best_epoch": 0.3349505708374583
+      "best_epoch": 5,
+      "best_val_disease_macro_f1": 0.2793975022844959,
+      "best_val_loss": 3.109892988204956,
+      "val_concept_macro_f1_at_best_epoch": 0.38906038135549187
     },
     {
       "experiment": "B6_PureCBM",
@@ -232,10 +63,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "B6_PureCBM_seed_100.pth",
-      "best_epoch": 16,
-      "best_val_disease_macro_f1": 0.5668693693693694,
-      "best_val_loss": 2.7678805112838747,
-      "val_concept_macro_f1_at_best_epoch": 0.35151424998511377
+      "best_epoch": 12,
+      "best_val_disease_macro_f1": 0.5226465841850458,
+      "best_val_loss": 2.9141856908798216,
+      "val_concept_macro_f1_at_best_epoch": 0.4408550710246625
     },
     {
       "experiment": "B6_PureCBM",
@@ -245,10 +76,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "B6_PureCBM_seed_2026.pth",
-      "best_epoch": 13,
-      "best_val_disease_macro_f1": 0.5293169826900541,
-      "best_val_loss": 2.9501736402511596,
-      "val_concept_macro_f1_at_best_epoch": 0.3720304797016282
+      "best_epoch": 14,
+      "best_val_disease_macro_f1": 0.502788323679532,
+      "best_val_loss": 2.8337231636047364,
+      "val_concept_macro_f1_at_best_epoch": 0.4849623997377545
     },
     {
       "experiment": "Proposed_Hybrid",
@@ -258,10 +89,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "Proposed_Hybrid_seed_42.pth",
-      "best_epoch": 16,
-      "best_val_disease_macro_f1": 0.5344319432554727,
-      "best_val_loss": 2.962387442588806,
-      "val_concept_macro_f1_at_best_epoch": 0.3941234820071256
+      "best_epoch": 12,
+      "best_val_disease_macro_f1": 0.5632387910041541,
+      "best_val_loss": 2.8295028448104858,
+      "val_concept_macro_f1_at_best_epoch": 0.472470778752587
     },
     {
       "experiment": "Proposed_Hybrid",
@@ -271,10 +102,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "Proposed_Hybrid_seed_100.pth",
-      "best_epoch": 20,
-      "best_val_disease_macro_f1": 0.6081664098613252,
-      "best_val_loss": 3.0723029375076294,
-      "val_concept_macro_f1_at_best_epoch": 0.3764145198754654
+      "best_epoch": 14,
+      "best_val_disease_macro_f1": 0.5574294340661478,
+      "best_val_loss": 2.7772682189941404,
+      "val_concept_macro_f1_at_best_epoch": 0.49944884801354333
     },
     {
       "experiment": "Proposed_Hybrid",
@@ -284,10 +115,10 @@
       "use_metadata": true,
       "alpha": 2.0,
       "checkpoint": "Proposed_Hybrid_seed_2026.pth",
-      "best_epoch": 14,
-      "best_val_disease_macro_f1": 0.5715845439349061,
-      "best_val_loss": 2.9153461694717406,
-      "val_concept_macro_f1_at_best_epoch": 0.3949645535687922
+      "best_epoch": 9,
+      "best_val_disease_macro_f1": 0.5138677414539483,
+      "best_val_loss": 2.6857170343399046,
+      "val_concept_macro_f1_at_best_epoch": 0.46774039778441207
     }
   ]
 }

@@ -44,10 +44,44 @@ So sánh giữa:
 **OOD detection** và **conformal prediction** chưa được thực hiện.
 
 ---
+## Cấu trúc thực nghiệm của repository
 
-# 2. Thuật ngữ quan trọng
+Ba đóng góp chính của bài báo được triển khai trong repository thông qua 5 module thực nghiệm:
 
-Quy trình chuẩn bị dữ liệu hiện tại sử dụng:
+### C1 — Metadata-Guided Cross-Attention
+Đánh giá cơ chế fusion trong đó metadata đóng vai trò Query, còn đặc trưng clinical và dermoscopy đóng vai trò Key/Value.
+
+C1 là một kiến trúc fusion thay thế, không được khẳng định là luôn tốt hơn hoặc nhanh hơn feature concatenation.
+
+### C2 — Concept Bottleneck & Concept Intervention
+Bao gồm Pure CBM, Proposed Hybrid CBM, concept prediction, oracle intervention và sequential concept diagnostics.
+
+Alpha được chọn trên Validation với `alpha = 2.0`.
+
+### C3 — Rigorous Experimental Evaluation
+Bao gồm 3 seed `42`, `100`, `2026`, lựa chọn mô hình trên Validation, đánh giá độc lập trên Test, macro metrics, per-class analysis và bootstrap CI.
+
+### C4 — Visual Explainability with Grad-CAM
+Grad-CAM được dùng để phân tích định tính vùng ảnh ảnh hưởng đến prediction trên clinical và dermoscopy.
+
+Phân tích dùng `Proposed_Hybrid`, seed cố định `42`, gồm 5 Success và 5 Failure cases đại diện đủ 5 lớp.
+
+### C5 — Prediction Confidence & Uncertainty Analysis
+Bao gồm confidence, entropy, prediction margin, seed disagreement, probability variability, mutual information, error detection, uncertainty ranking và selective prediction.
+
+C5 không thực hiện OOD detection, conformal prediction hoặc prospective clinical triage.
+
+Các báo cáo canonical nằm tại:
+
+```text
+results/contribution_1/
+results/contribution_2/
+results/contribution_3/
+results/contribution_4/
+results/contribution_5/
+
+
+
 
 `GroupShuffleSplit(groups=case_num)`
 
@@ -201,12 +235,12 @@ RIVF2026_Derm7pt_Project/
 │   ├── run_alpha_ablation.py           # Script tìm Alpha tốt nhất trên tập Validation
 │   ├── run_ablation.py                 # Kịch bản tự động train 21 models
 │   ├── run_evaluation.py               # Chấm điểm trên tập Test (xuất test_predictions.csv)
-│   ├── evaluate_concepts.py            # Chấm điểm 7 khái niệm (AUROC, F1, Precision, Recall)
+│   ├── concept_evaluation.py            # Chấm điểm 7 khái niệm (AUROC, F1, Precision, Recall)
 │   ├── run_intervention.py             # Đánh giá thay thế Oracle Concept trực tiếp
 │   ├── sequential_cbm.py               # Đánh giá CBM chuỗi qua 3 seeds (Random Forest/Logistic Regression)
 │   ├── bootstrap_eval.py               # Trích xuất khoảng tin cậy 95% Bootstrap CI
 │   ├── gradcam_vis.py                  # Vẽ bản đồ nhiệt Grad-CAM
-│   ├── extract_predictions.py          # (sẽ được tạo để xử lý contribution 5)Trích xuất Uncertainty & Confidence cho OOD/Active Learning
+│   ├── extract_predictions.py          # Trích xuất probability, confidence và uncertainty trên Test
 │   │
 │   ├── data/                           # Module Xử lý Dữ liệu
 │   │   ├── dataset.py                  # Class PyTorch Dataset và Transform
