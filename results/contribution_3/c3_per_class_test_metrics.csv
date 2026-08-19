@@ -1,0 +1,36 @@
+Model,Class,Sensitivity,Specificity
+B1_Clinical_Only,Basal Cell Carcinoma,0.4000 ± 0.2000,0.9569 ± 0.0142
+B1_Clinical_Only,Melanoma,0.6762 ± 0.0330,0.7892 ± 0.0385
+B1_Clinical_Only,Miscellaneous,0.5417 ± 0.0722,0.9142 ± 0.0297
+B1_Clinical_Only,Nevus,0.6778 ± 0.0484,0.8548 ± 0.0323
+B1_Clinical_Only,Seborrheic Keratosis,0.0000 ± 0.0000,0.9658 ± 0.0137
+B2_Derm_Only,Basal Cell Carcinoma,0.3333 ± 0.1155,0.9683 ± 0.0104
+B2_Derm_Only,Melanoma,0.6286 ± 0.0495,0.8946 ± 0.0049
+B2_Derm_Only,Miscellaneous,0.5208 ± 0.0361,0.9167 ± 0.0112
+B2_Derm_Only,Nevus,0.7815 ± 0.0339,0.8602 ± 0.0493
+B2_Derm_Only,Seborrheic Keratosis,0.6111 ± 0.0962,0.9384 ± 0.0119
+B3_Meta_Only,Basal Cell Carcinoma,1.0000 ± 0.0000,0.8594 ± 0.0453
+B3_Meta_Only,Melanoma,0.2381 ± 0.0330,0.8490 ± 0.0247
+B3_Meta_Only,Miscellaneous,0.2292 ± 0.2009,0.9632 ± 0.0195
+B3_Meta_Only,Nevus,0.5370 ± 0.0819,0.8172 ± 0.0406
+B3_Meta_Only,Seborrheic Keratosis,0.5556 ± 0.0962,0.8037 ± 0.0446
+B4_Dual_NoMeta,Basal Cell Carcinoma,0.4000 ± 0.2000,0.9569 ± 0.0283
+B4_Dual_NoMeta,Melanoma,0.5619 ± 0.1409,0.8803 ± 0.0148
+B4_Dual_NoMeta,Miscellaneous,0.6250 ± 0.0625,0.9069 ± 0.0042
+B4_Dual_NoMeta,Nevus,0.6889 ± 0.0778,0.8871 ± 0.0161
+B4_Dual_NoMeta,Seborrheic Keratosis,0.3333 ± 0.3333,0.8881 ± 0.0514
+B5_Dual_Metadata,Basal Cell Carcinoma,0.6000 ± 0.2000,0.9705 ± 0.0079
+B5_Dual_Metadata,Melanoma,0.6857 ± 0.0571,0.8803 ± 0.0256
+B5_Dual_Metadata,Miscellaneous,0.6667 ± 0.0361,0.9069 ± 0.0042
+B5_Dual_Metadata,Nevus,0.7704 ± 0.0064,0.8978 ± 0.0246
+B5_Dual_Metadata,Seborrheic Keratosis,0.1667 ± 0.0000,0.9543 ± 0.0259
+B6_PureCBM,Basal Cell Carcinoma,0.4000 ± 0.2000,0.9206 ± 0.0219
+B6_PureCBM,Melanoma,0.5048 ± 0.1945,0.9202 ± 0.0131
+B6_PureCBM,Miscellaneous,0.5833 ± 0.0955,0.7892 ± 0.0948
+B6_PureCBM,Nevus,0.6222 ± 0.1637,0.9140 ± 0.0336
+B6_PureCBM,Seborrheic Keratosis,0.2222 ± 0.0962,0.9269 ± 0.0523
+Proposed_Hybrid,Basal Cell Carcinoma,0.2667 ± 0.1155,0.9524 ± 0.0180
+Proposed_Hybrid,Melanoma,0.6000 ± 0.0495,0.9031 ± 0.0300
+Proposed_Hybrid,Miscellaneous,0.6042 ± 0.0955,0.8824 ± 0.0409
+Proposed_Hybrid,Nevus,0.7519 ± 0.0257,0.8495 ± 0.0672
+Proposed_Hybrid,Seborrheic Keratosis,0.1667 ± 0.0000,0.9475 ± 0.0209

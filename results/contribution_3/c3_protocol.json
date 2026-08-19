@@ -1,0 +1,43 @@
+{
+  "contribution": 3,
+  "name": "Rigorous Experimental Evaluation",
+  "seeds": [
+    42,
+    100,
+    2026
+  ],
+  "test_samples": 152,
+  "model_selection": "Validation only",
+  "checkpoint_selection": "Validation Macro-F1",
+  "test_usage": "Final evaluation and post-training analyses only",
+  "primary_uncertainty_reporting": "Mean \u00b1 sample SD across 3 seeds",
+  "bootstrap_method": "Stratified percentile bootstrap",
+  "bootstrap_iterations": 1000,
+  "bootstrap_ci": "95%",
+  "probability_ensemble": "Secondary analysis only",
+  "models": [
+    "B1_Clinical_Only",
+    "B2_Derm_Only",
+    "B3_Meta_Only",
+    "B4_Dual_NoMeta",
+    "B5_Dual_Metadata",
+    "B6_PureCBM",
+    "Proposed_Hybrid"
+  ],
+  "metrics": [
+    "Accuracy",
+    "Balanced Accuracy",
+    "Macro F1",
+    "Macro Precision",
+    "Macro Recall",
+    "Macro Specificity",
+    "One-vs-Rest AUROC"
+  ],
+  "per_class_metrics": [
+    "Sensitivity",
+    "Specificity"
+  ],
+  "calibration_set": "Reserved; not used for model selection or calibration",
+  "ood_detection": false,
+  "conformal_prediction": false
+}
