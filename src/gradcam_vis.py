@@ -2,10 +2,12 @@ import json
 import os
 import re
 import warnings
+from pathlib import Path
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 from pytorch_grad_cam import GradCAM
@@ -72,12 +74,20 @@ class DermCamWrapper(torch.nn.Module):
 
 def main():
     paths = Config.ensure_runtime_dirs()
+
+    if os.path.isdir("/content/local_images"):
+        paths["img_dir"] = "/content/local_images"
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     output_dir = os.path.join(
         paths["output_dir"], "gradcam_results"
     )
     os.makedirs(output_dir, exist_ok=True)
+
+    # Remove stale Grad-CAM images from previous checkpoints/runs.
+    for old_file in Path(output_dir).glob("*.png"):
+        old_file.unlink()
 
     required = [
         paths["test_csv"],
@@ -96,6 +106,10 @@ def main():
 
     encoder = joblib.load(paths["meta_encoder"])
     meta_input_dim = len(encoder.get_feature_names_out())
+
+    test_df = pd.read_csv(
+        paths["test_csv"]
+    ).reset_index(drop=True)
 
     dataset = MultimodalDermDataset(
         paths["test_csv"],
@@ -144,6 +158,8 @@ def main():
         "Success": set(),
         "Failure": set(),
     }
+
+    manifest_rows = []
 
     print(
         f"Generating Grad-CAM from pre-specified "
@@ -256,6 +272,26 @@ def main():
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
         plt.close(fig)
 
+        row_info = test_df.iloc[i]
+
+        manifest_rows.append(
+            {
+                "sample_index": int(i),
+                "case_num": row_info.get("case_num", np.nan),
+                "case_id": row_info.get("case_id", np.nan),
+                "status": status,
+                "true_class_idx": int(true_idx),
+                "true_class": true_name,
+                "pred_class_idx": int(pred_idx),
+                "pred_class": pred_name,
+                "confidence": float(confidence),
+                "clinic": row_info.get("clinic", ""),
+                "derm": row_info.get("derm", ""),
+                "gradcam_file": os.path.basename(save_path),
+                "gradcam_seed": int(seed),
+            }
+        )
+
         saved[status].add(true_idx)
         print(f"Saved: {save_path}")
 
@@ -266,7 +302,43 @@ def main():
         f"Failure classes represented={len(saved['Failure'])}/"
         f"{Config.NUM_CLASSES}."
     )
+    manifest_df = pd.DataFrame(manifest_rows)
+
+    result_dir = os.path.join(
+        paths["results_dir"],
+        "contribution_4"
+    )
+    os.makedirs(result_dir, exist_ok=True)
+
+    manifest_path = os.path.join(
+        result_dir,
+        "c4_gradcam_manifest.csv"
+    )
+
+    manifest_df.to_csv(
+        manifest_path,
+        index=False
+    )
+
     print(f"Output directory: {output_dir}")
+    print(f"Manifest: {manifest_path}")
+
+    print("\n=== GRADCAM MANIFEST ===")
+    print(
+        manifest_df[
+            [
+                "sample_index",
+                "case_num",
+                "status",
+                "true_class",
+                "pred_class",
+                "confidence",
+            ]
+        ].to_markdown(
+            index=False,
+            floatfmt=".4f"
+        )
+    )
 
 
 if __name__ == "__main__":

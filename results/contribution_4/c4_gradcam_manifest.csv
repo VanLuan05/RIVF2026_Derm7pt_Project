@@ -1,0 +1,11 @@
+sample_index,case_num,case_id,status,true_class_idx,true_class,pred_class_idx,pred_class,confidence,clinic,derm,gradcam_file,gradcam_seed
+0,11,,Success,0,Basal Cell Carcinoma,0,Basal Cell Carcinoma,0.8281680941581726,NEL/NEL090.JPG,NEL/Nel091.jpg,Success_true-Basal_Cell_Carcinoma_pred-Basal_Cell_Carcinoma_idx-0.png,42
+1,24,,Failure,0,Basal Cell Carcinoma,2,Miscellaneous,0.8721592426300049,Adl/Adl378.jpg,Adl/Adl379.jpg,Failure_true-Basal_Cell_Carcinoma_pred-Miscellaneous_idx-1.png,42
+5,45,,Success,3,Nevus,3,Nevus,0.9786388278007507,NFL/Nfl047.jpg,NFL/Nfl048.jpg,Success_true-Nevus_pred-Nevus_idx-5.png,42
+9,64,,Failure,3,Nevus,1,Melanoma,0.7686934471130371,FBL/FBL031.JPG,FBL/FBL032.JPG,Failure_true-Nevus_pred-Melanoma_idx-9.png,42
+82,533,,Failure,2,Miscellaneous,4,Seborrheic Keratosis,0.7659765481948853,NFL/Nfl003.jpg,NFL/Nfl004.jpg,Failure_true-Miscellaneous_pred-Seborrheic_Keratosis_idx-82.png,42
+83,535,,Success,2,Miscellaneous,2,Miscellaneous,0.9923128485679626,A1l/Aal017.jpg,A1l/Aal018.jpg,Success_true-Miscellaneous_pred-Miscellaneous_idx-83.png,42
+87,577,,Failure,1,Melanoma,3,Nevus,0.46750229597091675,NAL/Nal019.jpg,NAL/Nal020.jpg,Failure_true-Melanoma_pred-Nevus_idx-87.png,42
+89,585,,Success,1,Melanoma,1,Melanoma,0.7463415265083313,NAL/Nal078.jpg,NAL/Nal077.jpg,Success_true-Melanoma_pred-Melanoma_idx-89.png,42
+141,940,,Failure,4,Seborrheic Keratosis,0,Basal Cell Carcinoma,0.8598348498344421,NFL/Nfl007.jpg,NFL/Nfl008.jpg,Failure_true-Seborrheic_Keratosis_pred-Basal_Cell_Carcinoma_idx-141.png,42
+143,952,,Success,4,Seborrheic Keratosis,4,Seborrheic Keratosis,0.8705553412437439,A3l/Acl226.jpg,A3l/Acl227.jpg,Success_true-Seborrheic_Keratosis_pred-Seborrheic_Keratosis_idx-143.png,42

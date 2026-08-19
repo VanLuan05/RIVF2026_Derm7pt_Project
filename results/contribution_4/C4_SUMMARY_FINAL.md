@@ -1,216 +1,334 @@
 # CONTRIBUTION 4 - FINAL SUMMARY
 
-## 1. Mục tiêu
+## 1. Objective
 
-Xây dựng quy trình đánh giá nghiêm ngặt và có khả năng tái lập cho mô hình,
-sử dụng các tập Train, Validation, Calibration và Test tách biệt,
-kiểm soát data leakage, lựa chọn mô hình chỉ trên Validation,
-đánh giá trên nhiều random seeds và định lượng độ bất định của kết quả.
+Contribution 4 investigates the visual explainability of the Proposed Hybrid
+model using Grad-CAM.
 
-## 2. Data Split Protocol
+The objective is to qualitatively inspect which image regions contribute to
+the model's disease prediction in:
 
-Tổng số mẫu: **1011**
+- clinical images;
+- dermoscopic images.
 
-| Split | Samples | Vai trò |
-|---|---:|---|
-| Train | 605 | Model fitting |
-| Validation | 152 | Checkpoint & hyperparameter selection |
-| Calibration | 102 | Reserved calibration set |
-| Test | 152 | Final evaluation only |
+This contribution is intended as a diagnostic interpretability analysis.
 
-Split strategy:
-- Grouped splitting
-- Primary grouping key: `case_num`
-- Additional leakage check: `case_id`
-- `case_num` overlap giữa các split: **0**
-- `case_id` overlap giữa các split: **0**
+It does **not** claim:
 
-Không mô tả protocol này là patient-level split vì `case_num`
-chưa được xác nhận là patient identifier.
+- causal explanation;
+- quantitative lesion localization;
+- dermatologist-validated explanation quality;
+- segmentation accuracy;
+- clinically validated reasoning.
 
-## 3. Leakage Control
+---
 
-Audit được thực hiện giữa mọi cặp:
+## 2. Model and Protocol
 
-- Train ↔ Validation
-- Train ↔ Calibration
-- Train ↔ Test
-- Validation ↔ Calibration
-- Validation ↔ Test
-- Calibration ↔ Test
+Grad-CAM is generated from:
 
-Kết quả:
+> Proposed_Hybrid, seed = 42
 
-**Không phát hiện overlap theo `case_num` hoặc `case_id`.**
+The seed is pre-specified through:
 
-Metadata preprocessing:
-- Columns: `sex`, `location`, `elevation`
-- Metadata encoder chỉ được fit trên **Train**
-- Validation / Calibration / Test không tham gia fit encoder
-- `handle_unknown='ignore'`
+> `Config.GRADCAM_SEED = 42`
 
-## 4. Model & Hyperparameter Selection
+It is not selected according to Test performance.
 
-Hyperparameter alpha được lựa chọn hoàn toàn trên Validation.
+The independent Test set is processed with:
 
-Candidate alpha:
-- 2.0
-- 3.0
+- `batch_size = 1`;
+- `shuffle = False`;
+- deterministic sample order.
 
-Selection metric:
+The selection procedure retains at most:
 
-`mean_validation_disease_macro_f1_across_3_seeds`
+- one correctly classified example per true disease class;
+- one incorrectly classified example per true disease class.
 
-Selected alpha:
+Examples are therefore not selected according to confidence or Test score.
 
-**alpha = 2.0**
+---
 
-Test set không được sử dụng để lựa chọn alpha.
+## 3. Disease-Class Coverage
 
-Checkpoint selection:
-- Monitor: Validation Disease Macro-F1
-- Early stopping patience: 5
-- Maximum epochs: 20
+A total of 10 examples are visualized:
 
-## 5. Reproducibility Protocol
+- 5 Success cases;
+- 5 Failure cases.
 
-Locked seeds:
+All five disease classes are represented in both groups:
 
-**42, 100, 2026**
+- Basal Cell Carcinoma;
+- Melanoma;
+- Miscellaneous;
+- Nevus;
+- Seborrheic Keratosis.
 
-Training configuration:
+Thus:
 
-| Setting | Value |
-|---|---|
-| Batch size | 32 |
-| Optimizer | AdamW |
-| Learning rate | 5e-05 |
-| Weight decay | 0.0001 |
-| Max epochs | 20 |
-| Early stopping patience | 5 |
-| Checkpoint monitor | Validation Disease Macro-F1 |
+> Success classes represented = 5/5
 
-Randomness control:
-- Python random seed
-- NumPy seed
-- PyTorch seed
-- CUDA seed
-- `cudnn.deterministic = True`
-- `cudnn.benchmark = False`
-- Seeded DataLoader generator
+and:
 
-## 6. Multi-Seed Final Evaluation
+> Failure classes represented = 5/5
 
-Final evaluation được thực hiện trên independent Test split sau khi
-model/hyperparameter selection đã hoàn tất trên Validation.
+---
 
-Có:
+## 4. Grad-CAM Generation
 
-- **7 architectures**
-- **3 seeds**
-- **21 trained models**
+Grad-CAM is generated separately for the two image branches.
 
-Primary reporting:
+### Clinical branch
 
-**Mean ± sample standard deviation across seeds (`ddof=1`)**
+The clinical image is treated as the variable input while:
 
-Proposed Hybrid Test results:
+- dermoscopic image;
+- metadata
 
-| Metric | Mean ± SD |
-|---|---:|
-| Accuracy | 0.6842 ± 0.0287 |
-| Balanced Accuracy | 0.5084 ± 0.0276 |
-| Macro F1 | 0.4781 ± 0.0279 |
-| Macro Precision | 0.4660 ± 0.0250 |
-| Macro Recall | 0.5084 ± 0.0276 |
-| Macro Specificity | 0.9133 ± 0.0072 |
-| One-vs-Rest AUROC | 0.8555 ± 0.0217 |
+remain fixed.
 
-## 7. Bootstrap Uncertainty Estimation
+### Dermoscopic branch
 
-Method:
+The dermoscopic image is treated as the variable input while:
 
-**Stratified percentile bootstrap**
+- clinical image;
+- metadata
 
-Configuration:
-- Bootstrap replicates: **1000**
-- Random state: **42**
-- Confidence interval: **95%**
+remain fixed.
 
-Resampling được thực hiện trong từng disease class để giữ nguyên
-class counts trong mỗi bootstrap replicate.
+Grad-CAM is extracted from the final convolutional region of the corresponding
+ResNet-50 branch.
 
-Per-seed Macro-F1 95% CI:
+The target class is the model's predicted disease class.
 
-| Seed | Point Estimate | 95% CI |
-|---|---:|---:|
-| 42 | 0.5076 | [0.4022, 0.6246] |
-| 100 | 0.4746 | [0.3819, 0.5780] |
-| 2026 | 0.4521 | [0.3589, 0.5435] |
+---
 
-3-seed probability ensemble được xem là **secondary analysis**,
-không thay thế primary reporting bằng mean ± SD across independent runs.
+## 5. Main Qualitative Observations
 
-## 8. Vai trò của bốn tập dữ liệu
+The inspected examples show that Grad-CAM activation often overlaps with the
+visible lesion region.
 
-Train:
-- Model fitting
-- Fit metadata encoder
+This behavior is particularly noticeable in several dermoscopic examples.
 
-Validation:
-- Checkpoint selection
-- Early stopping
-- Hyperparameter alpha selection
+However, activation outside the lesion is also present.
 
-Calibration:
-- Được giữ riêng
-- Hiện tại chưa được sử dụng để model selection hay training
-- Chỉ được mô tả là **reserved calibration set**
+Observed non-lesion regions include:
 
-Test:
-- Không dùng cho training
-- Không dùng để chọn checkpoint
-- Không dùng để chọn alpha
-- Chỉ dùng cho final evaluation và post-training analyses
+- surrounding skin;
+- image borders;
+- ruler markings;
+- peripheral image regions.
 
-## 9. Kết luận C4
+Therefore, Grad-CAM does not demonstrate that the model exclusively relies on
+clinically meaningful lesion features.
 
-Contribution 4 đã triển khai một evaluation protocol có kiểm soát leakage
-và có khả năng tái lập.
+---
 
-Protocol bao gồm:
+## 6. Success Cases
 
-- Train / Validation / Calibration / Test tách biệt
-- Grouped split với zero overlap theo `case_num` và `case_id`
-- Metadata encoder fit trên Train only
-- Hyperparameter và checkpoint selection trên Validation only
-- Independent Test evaluation
-- Three locked random seeds
-- Mean ± sample SD across seeds
-- Stratified bootstrap 95% confidence intervals
-- Fixed bootstrap random state
+Several correctly classified cases show substantial lesion-centered activation.
 
-Vì Calibration set hiện mới được reserve và chưa được sử dụng cho calibration,
-không claim rằng model đã được calibrated trong Contribution 4.
+Examples include:
 
-**Contribution 4: Rigorous and reproducible evaluation protocol — COMPLETED.**
+- Basal Cell Carcinoma classified correctly;
+- Miscellaneous classified correctly;
+- Seborrheic Keratosis classified correctly.
 
-## 10. Files liên quan
+The Miscellaneous success example shows relatively lesion-centered attention
+in both clinical and dermoscopic views.
 
-### C4 Evidence
-- `results/contribution_4/c4_split_audit.csv`
-- `results/contribution_4/c4_protocol.json`
-- `results/contribution_4/c4_selected_alpha.json`
-- `results/contribution_4/c4_alpha_ablation_final.md`
-- `results/contribution_4/c4_final_results.md`
-- `results/contribution_4/c4_bootstrap_ci.md`
-- `results/contribution_4/c4_ablation_training_manifest.json`
+The dermoscopic branch of the Nevus success example also focuses substantially
+on the lesion.
 
-### Main source
-- `src/data/prepare_data.py`
-- `src/config.py`
-- `src/train.py`
-- `src/run_ablation.py`
-- `src/run_alpha_ablation.py`
-- `src/run_evaluation.py`
-- `src/bootstrap_eval.py`
+However, the corresponding clinical Grad-CAM contains noticeable activation
+near ruler markings.
+
+This demonstrates that:
+
+> correct classification does not necessarily imply fully plausible visual
+> attention.
+
+---
+
+## 7. Failure Cases
+
+Incorrect predictions exhibit multiple types of behavior.
+
+### Lesion-centered but incorrect prediction
+
+The Nevus-to-Melanoma failure shows substantial activation around the visible
+lesion in both modalities.
+
+Therefore:
+
+> plausible lesion localization is not sufficient for correct disease
+> discrimination.
+
+### Possible artifact-related attention
+
+The Miscellaneous-to-Seborrheic-Keratosis failure shows strong clinical
+activation close to ruler and image-border regions.
+
+The Melanoma-to-Nevus example also contains a strong clinical hotspot toward
+the image periphery, while its dermoscopic Grad-CAM is more lesion-centered.
+
+These examples indicate that the model may occasionally attend to non-lesion
+visual cues.
+
+---
+
+## 8. High-Confidence Failure Cases
+
+Several incorrect predictions have relatively high softmax confidence.
+
+Examples include:
+
+| True Class | Predicted Class | Confidence |
+|---|---|---:|
+| Basal Cell Carcinoma | Miscellaneous | 0.8722 |
+| Seborrheic Keratosis | Basal Cell Carcinoma | 0.8598 |
+| Nevus | Melanoma | 0.7687 |
+| Miscellaneous | Seborrheic Keratosis | 0.7660 |
+| Melanoma | Nevus | 0.4675 |
+
+These examples demonstrate that high predictive confidence does not guarantee:
+
+- correct classification;
+- lesion-centered attention;
+- clinically plausible visual evidence.
+
+This observation is consistent with the uncertainty analysis reported in
+Contribution 5.
+
+---
+
+## 9. Clinical versus Dermoscopic Attention
+
+Across the inspected examples, the dermoscopic branch frequently exhibits
+more lesion-centered activation than the clinical branch.
+
+The clinical branch more often displays activation over:
+
+- surrounding skin;
+- rulers;
+- borders;
+- peripheral image regions.
+
+This should be treated as a qualitative observation only.
+
+No quantitative statistical comparison between clinical and dermoscopic
+Grad-CAM localization is performed.
+
+---
+
+## 10. Interpretation
+
+The Grad-CAM analysis supports three qualitative conclusions.
+
+### 1. Lesion-related attention is often present
+
+The Proposed Hybrid model frequently activates around visible lesion regions.
+
+### 2. Modalities exhibit different attention patterns
+
+Clinical and dermoscopic branches do not necessarily focus on identical image
+regions.
+
+### 3. Spurious or non-lesion attention remains possible
+
+Some examples contain substantial activation over rulers, borders, surrounding
+skin, or peripheral regions.
+
+Grad-CAM should therefore be interpreted as:
+
+> a post-hoc diagnostic visualization of model behavior
+
+rather than proof of causal or clinically validated reasoning.
+
+---
+
+## 11. Reproducibility Evidence
+
+A manifest is stored for every Grad-CAM example.
+
+For each sample it records:
+
+- Test sample index;
+- `case_num`;
+- `case_id`;
+- Success / Failure status;
+- true disease;
+- predicted disease;
+- prediction confidence;
+- clinical image path;
+- dermoscopic image path;
+- Grad-CAM output filename;
+- Grad-CAM seed.
+
+This allows every displayed example to be traced back to the fixed Test split.
+
+---
+
+## 12. Limitations
+
+The following limitations must be retained when reporting Contribution 4:
+
+1. Only 10 deterministic examples are visualized.
+2. Grad-CAM is a qualitative post-hoc method.
+3. No lesion segmentation masks are available for quantitative localization.
+4. No dermatologist assessment of Grad-CAM maps is performed.
+5. Attention localization does not establish causal feature usage.
+6. Correct predictions may still contain non-lesion attention.
+7. Incorrect predictions may still attend to the visible lesion.
+8. No quantitative comparison between clinical and dermoscopic localization is performed.
+9. Grad-CAM results are shown for one pre-specified seed.
+10. The analysis must not be interpreted as clinical validation of model reasoning.
+
+---
+
+## 13. Conclusion
+
+Contribution 4 provides a qualitative visual explainability analysis of the
+Proposed Hybrid model using Grad-CAM.
+
+The inspected cases show that the model often attends to lesion-related
+regions, particularly in dermoscopic images.
+
+At the same time, Grad-CAM reveals several examples of attention toward
+non-lesion regions such as rulers, borders, and surrounding skin.
+
+The analysis also demonstrates that:
+
+- plausible lesion localization does not guarantee correct classification;
+- correct classification does not guarantee fully plausible attention;
+- high confidence does not guarantee correct or clinically meaningful reasoning.
+
+Therefore, Grad-CAM is used as a diagnostic interpretability tool rather than
+as proof of clinical faithfulness.
+
+**Contribution 4: Visual Explainability with Grad-CAM — COMPLETED.**
+
+---
+
+## 14. Files
+
+### Source
+
+- `src/gradcam_vis.py`
+
+### Results
+
+- `results/contribution_4/C4_SUMMARY_FINAL.md`
+- `results/contribution_4/c4_gradcam_analysis.md`
+- `results/contribution_4/c4_gradcam_manifest.csv`
+- `results/contribution_4/c4_gradcam_contact_sheet.png`
+
+### Grad-CAM Images
+
+- `outputs/gradcam_results/`
+
+The folder contains:
+
+- 5 Success images;
+- 5 Failure images.
