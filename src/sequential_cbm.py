@@ -96,6 +96,12 @@ def main():
     a distribution it was not trained on.
     """
     paths = Config.ensure_runtime_dirs()
+
+    if os.path.isdir("/content/local_images"):
+        paths["img_dir"] = "/content/local_images"
+
+    print("Image source:", paths["img_dir"])
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     encoder = joblib.load(paths["meta_encoder"])
@@ -186,12 +192,8 @@ def main():
 
         # A. Realistic sequential classifier: trained and tested on
         # predicted concept probability distributions.
-        x_train_pred = np.hstack(
-            [x_train_pred_c, x_train_meta]
-        )
-        x_test_pred = np.hstack(
-            [x_test_pred_c, x_test_meta]
-        )
+        x_train_pred = x_train_pred_c
+        x_test_pred = x_test_pred_c
 
         clf_pred = LogisticRegression(
             class_weight="balanced",
@@ -203,11 +205,11 @@ def main():
 
         # B. Oracle upper bound: train/test both use the same soft-oracle
         # concept representation, avoiding a train-test concept shift.
-        x_train_oracle = np.hstack(
-            [_soft_oracle_np(y_train_true_c), x_train_meta]
+        x_train_oracle = _soft_oracle_np(
+            y_train_true_c
         )
-        x_test_oracle = np.hstack(
-            [_soft_oracle_np(y_test_true_c), x_test_meta]
+        x_test_oracle = _soft_oracle_np(
+            y_test_true_c
         )
 
         clf_oracle = LogisticRegression(
@@ -267,8 +269,19 @@ def main():
         ]
     )
 
+    out_dir = os.path.join(
+        paths["results_dir"],
+        "contribution_2"
+    )
+
+    os.makedirs(
+        out_dir,
+        exist_ok=True
+    )
+
     out_path = os.path.join(
-        paths["results_dir"], "sequential_cbm_results.md"
+        out_dir,
+        "c2_sequential_cbm_results.md"
     )
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("# Sequential CBM Concept-Quality Gap Analysis\n\n")

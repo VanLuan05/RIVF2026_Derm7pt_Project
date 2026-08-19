@@ -1,0 +1,3 @@
+Model,Macro F1 AI,Macro F1 Oracle,Mean Delta Macro F1,Balanced Accuracy AI,Balanced Accuracy Oracle,Mean Delta Balanced Accuracy
+B6_PureCBM,0.4018 ± 0.0847,0.2281 ± 0.0743,-0.1737,0.4665 ± 0.0706,0.2476 ± 0.0129,-0.2189
+Proposed_Hybrid,0.4489 ± 0.0287,0.4472 ± 0.0268,-0.0017,0.4779 ± 0.0230,0.4771 ± 0.0223,-0.0007

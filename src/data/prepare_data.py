@@ -21,20 +21,53 @@ def map_to_5_standard_classes(diagnosis):
         return 'Miscellaneous'
 
 def encode_binary_abnormal_concept(concept_name, value):
-    """SỬA LỖI P0: Mã hóa Concept giữ lại thông tin lâm sàng chuẩn xác"""
+    """
+    Binary encoding cho 7 Derm7pt concepts.
+
+    1 = checklist criterion positive / abnormal
+    0 = absent / regular / non-atypical
+    """
     val = str(value).lower().strip()
-    if 'absent' in val or val == 'nan' or val == 'none':
+
+    if val in {"nan", "none", ""}:
         return 0.0
-        
-    # Tùy chỉnh theo từng loại Concept để bắt đúng tính chất "bất thường"
-    if concept_name in ['pigment_network']:
-        return 1.0 if 'atypical' in val else 0.0
-    elif concept_name in ['streaks', 'pigmentation', 'dots_and_globules', 'vascular_structures']:
-        return 1.0 if 'irregular' in val else 0.0
-    elif concept_name in ['blue_whitish_veil', 'regression_structures']:
-        return 1.0 if 'present' in val else 0.0
+
+    if concept_name == "pigment_network":
+        return 1.0 if val == "atypical" else 0.0
+
+    elif concept_name == "streaks":
+        return 1.0 if val == "irregular" else 0.0
+
+    elif concept_name == "pigmentation":
+        return 1.0 if val in {
+            "diffuse irregular",
+            "localized irregular",
+            "irregular"
+        } else 0.0
+
+    elif concept_name == "regression_structures":
+        return 1.0 if val in {
+            "present",
+            "blue areas",
+            "white areas",
+            "combinations"
+        } else 0.0
+
+    elif concept_name == "dots_and_globules":
+        return 1.0 if val == "irregular" else 0.0
+
+    elif concept_name == "blue_whitish_veil":
+        return 1.0 if val == "present" else 0.0
+
+    elif concept_name == "vascular_structures":
+        return 1.0 if val in {
+            "dotted",
+            "linear irregular"
+        } else 0.0
+
     else:
-        return 0.0
+        raise ValueError(f"Unknown concept: {concept_name}")
+
 
 def main():
     print("Bắt đầu chuẩn hóa dữ liệu theo chuẩn Derm7pt...")

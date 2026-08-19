@@ -1,0 +1,4 @@
+Representation,Accuracy,Macro F1
+Soft predicted,0.6711 ± 0.0570,0.4451 ± 0.0054
+Hard predicted,0.6316 ± 0.0914,0.3999 ± 0.0508
+Ground truth,0.3947 ± 0.0000,0.3725 ± 0.0000

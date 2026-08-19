@@ -86,7 +86,7 @@ def main():
     )
 
     # Final confirmation sweep. Không dùng Test để chọn alpha.
-    candidate_alphas = [2.0, 3.0]
+    candidate_alphas = [0.5, 1.0, 2.0, 3.0]
     rows = []
     raw = {}
 
