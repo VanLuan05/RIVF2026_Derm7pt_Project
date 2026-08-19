@@ -1,0 +1,58 @@
+{
+  "contribution": "C4 - Rigorous Evaluation Protocol",
+  "split_sizes": {
+    "Train": 605,
+    "Validation": 152,
+    "Calibration": 102,
+    "Test": 152
+  },
+  "total_samples": 1011,
+  "split_strategy": {
+    "type": "grouped split",
+    "primary_group_key": "case_num",
+    "secondary_checked_key": "case_id",
+    "case_num_overlap_across_splits": 0,
+    "case_id_overlap_across_splits": 0
+  },
+  "data_usage": {
+    "train": "model fitting",
+    "validation": "checkpoint and hyperparameter selection",
+    "calibration": "reserved calibration set",
+    "test": "final evaluation only"
+  },
+  "metadata_encoder": {
+    "fit_on": "Train only",
+    "columns": [
+      "sex",
+      "location",
+      "elevation"
+    ],
+    "handle_unknown": "ignore"
+  },
+  "reproducibility": {
+    "seeds": [
+      42,
+      100,
+      2026
+    ],
+    "deterministic_cudnn": true,
+    "cudnn_benchmark": false,
+    "dataloader_seeded_generator": true
+  },
+  "training_protocol": {
+    "batch_size": 32,
+    "max_epochs": 20,
+    "learning_rate": 5e-05,
+    "weight_decay": 0.0001,
+    "early_stopping_patience": 5,
+    "checkpoint_monitor": "Validation Disease Macro-F1"
+  },
+  "uncertainty": {
+    "primary": "mean ± sample SD across 3 seeds",
+    "sd_ddof": 1,
+    "bootstrap_method": "stratified percentile bootstrap",
+    "bootstrap_iterations": 1000,
+    "bootstrap_random_state": 42,
+    "confidence_interval": "95%"
+  }
+}
